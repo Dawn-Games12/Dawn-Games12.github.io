@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>プライバシーポリシー｜夜明けの証明</title>
+<meta name="description" content="スマートフォン向けゲーム『夜明けの証明』のプライバシーポリシー">
+<style>
+  :root { --bg: #0a0d1f; --ink: #e8e5f3; --muted: #9995ba; --line: rgba(232,229,243,.12); --accent: #f1c38c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif; line-height: 1.85; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  header img { width: 56px; height: 56px; border-radius: 14px; }
+  header a { color: var(--ink); text-decoration: none; font-weight: 700; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: .04em; }
+  h2 { font-size: 17px; margin: 36px 0 8px; color: var(--accent); }
+  p, li { font-size: 15px; }
+  ul { padding-left: 1.3em; }
+  .meta { color: var(--muted); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  a { color: var(--accent); }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header><img src="icon.jpg" alt=""><a href="./">夜明けの証明</a></header>
+  <h1>プライバシーポリシー</h1>
+  <p class="meta">制定日：2026年10月12日</p>
+
+  <p>Dawn Games（以下「私たち」）は、スマートフォン向けゲーム『夜明けの証明』（以下「本アプリ」）における利用者の情報の取り扱いについて、以下のとおり定めます。</p>
+
+  <h2>1. 私たちのサーバーには、何も送られません</h2>
+  <p>本アプリは、私たちが運営するサーバーを使いません。利用者がゲーム内で入力した言葉や設定が、私たちに送られたり、私たちのもとに保存されたりすることはありません。</p>
+
+  <h2>2. 入力した言葉の送り先（Google の Gemini API）</h2>
+  <p>本アプリでは、仲間ともう一人の自分の返事をAIが作ります。そのため、利用者がゲーム中に入力した言葉と、その夜のチャットの内容は、<strong>利用者自身が登録したAPIキー（合鍵）を使って、Google LLC の Gemini API に直接送信されます</strong>。</p>
+  <ul>
+    <li>送信された内容の取り扱いは、Google の利用規約とプライバシーポリシーに従います。</li>
+    <li>Gemini API の無料枠では、送信された内容が Google のサービスの改善に使われることがあります。<strong>本名、住所、電話番号などの個人情報は入力しないでください。</strong></li>
+  </ul>
+  <p>参考：<a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Gemini API 追加利用規約</a>／<a href="https://policies.google.com/privacy" rel="noopener">Google プライバシーポリシー</a></p>
+
+  <h2>3. 端末の中だけに保存する情報</h2>
+  <p>次の情報は、利用者の端末の中だけに保存されます。私たちを含め、外部に送信されることはありません（APIキーは、上記2の送信のときだけ Google に渡されます）。</p>
+  <table>
+    <tr><th>情報</th><th>用途</th></tr>
+    <tr><td>プレイヤー名・一人称</td><td>仲間からの呼びかけなど</td></tr>
+    <tr><td>性格診断の結果</td><td>もう一人の自分の振る舞いの土台</td></tr>
+    <tr><td>APIキー（合鍵）</td><td>Gemini API の利用</td></tr>
+    <tr><td>クリア回数、音・文字の設定</td><td>記録と表示</td></tr>
+    <tr><td>その日に使ったAIの回数</td><td>1日に遊べる回数の表示</td></tr>
+    <tr><td>中断中の夜の内容</td><td>「続きから」での再開。夜が明けると消えます</td></tr>
+  </table>
+  <p>夜が明けて答え合わせを閉じると、その夜のチャットの内容は残りません。アプリを削除すると、端末に保存された情報もすべて消えます。</p>
+
+  <h2>4. 広告（Google AdMob）</h2>
+  <p>本アプリは、Google LLC が提供する広告サービス「Google AdMob」を利用しています。AdMob は、広告の配信、効果の測定、不正の防止のために、次のような情報を自動的に収集することがあります。</p>
+  <ul>
+    <li>広告ID（Android の広告ID）</li>
+    <li>端末の種類、OS のバージョン、おおよその位置（IPアドレスから推定）</li>
+    <li>広告の表示やタップなどの操作の記録</li>
+  </ul>
+  <p>これらの情報は Google により収集・利用され、私たちが個人を特定できる形で受け取ることはありません。欧州経済領域（EEA）や英国など、法律で求められる地域では、広告の配信前に同意の確認を表示します。広告のパーソナライズは、端末の設定（Google の設定 → 広告）から無効にできます。</p>
+  <p>詳しくは <a href="https://policies.google.com/technologies/partner-sites" rel="noopener">Google のパートナーのサイトやアプリでのデータ使用</a>／<a href="https://policies.google.com/privacy" rel="noopener">Google プライバシーポリシー</a> をご覧ください。</p>
+
+  <h2>5. 対象年齢</h2>
+  <p>本アプリはホラー要素を含むゲームで、13歳未満の方を対象としていません。13歳未満の方の情報を意図的に収集することはありません。</p>
+
+  <h2>6. このポリシーの変更</h2>
+  <p>本アプリの機能の変更などにあわせて、このポリシーを改めることがあります。大きな変更がある場合は、このページでお知らせします。</p>
+
+  <h2>7. お問い合わせ</h2>
+  <p>本ポリシーに関するお問い合わせは、次の連絡先までお願いします。<br><a href="mailto:support.dawn12@gmail.com">support.dawn12@gmail.com</a></p>
+
+  <footer>© 2026 Dawn Games</footer>
+</main>
+</body>
+</html>
