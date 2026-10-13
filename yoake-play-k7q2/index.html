@@ -2464,6 +2464,28 @@ function startCooldown() {
 
 // ---------- prompts ----------
 function behaviorOf() { return S.axes.map((v, i) => BEHAVIOR[i][v < 40 ? 0 : v > 60 ? 1 : 2]).join("。"); }
+// what the friends know the player for (10/14): the strongest one or two leanings of the diagnosis, for the small talk
+// to touch on or tease, the way old friends do
+const KNOWN_FOR = [["一人の時間が好きで、返事はマイペース", "みんなを巻き込んで話を広げる"], ["現実的で、細かいところにこだわる", "話がすぐ飛んで、たとえ話が多い"],
+  ["理屈っぽくて、すぐツッコむ", "人の気持ちに敏感で、やさしい"], ["予定をきっちり立てたがる", "その場のノリで決める"]];
+function knownFor() {
+  return S.axes.map((v, i) => ({ i, d: Math.abs(v - 50), text: KNOWN_FOR[i][v >= 50 ? 1 : 0] }))
+    .filter(x => x.d >= 15).sort((a, b) => b.d - a.d).slice(0, 2).map(x => x.text);
+}
+// how this friend's heart point sits with the player's own way of talking (10/14, shown in the answers)
+const AFFINITY_TEXT = {
+  T: ["あなたも理屈から考えるタイプ。筋の通った話し方が、そのまま届きやすい相手", "あなたは気持ちから話すタイプ。筋道や矛盾のなさを意識しないと届きにくい相手"],
+  F: ["あなたも気持ちに寄り添うタイプ。素直な言葉が、そのまま届きやすい相手", "あなたは理屈から考えるタイプ。気持ちや温かさを言葉にしないと届きにくい相手"],
+  S: ["あなたも具体的に話すタイプ。細かい事実が、そのまま届きやすい相手", "あなたは話が広がるタイプ。具体的な細部で示さないと届きにくい相手"],
+  N: ["あなたも発想が飛ぶタイプ。あなたらしい一言が、そのまま届きやすい相手", "あなたは具体的に話すタイプ。予想外の一言や言い回しがないと響きにくい相手"]
+};
+function affinity(f) {
+  const v = f.k === "T" || f.k === "F" ? S.axes[2] : S.axes[1];
+  const lean = f.k === "T" || f.k === "S" ? 100 - v : v;   // how far the player leans toward this friend's side
+  if (lean >= 60) return { mark: "◎", text: AFFINITY_TEXT[f.k][0] };
+  if (lean <= 40) return { mark: "△", text: AFFINITY_TEXT[f.k][1] };
+  return { mark: "○", text: "あなたはどちらにも寄せられるタイプ。言い方しだいで届く相手" };
+}
 function castLines() {
   return S.friends.map(f => "- " + f.name + "：" + f.desc + "。" + S.name + "とは" + f.rel + "。心が動くポイントは" + f.point + "。" +
     (f.fp ? "\n  話し方：一人称「" + f.fp + "」。" + f.habit + "。口調は" + f.tone + "。" : "\n  話し方：口調は" + f.tone + "。") +
@@ -2747,6 +2769,8 @@ function directorPrompt(beat) {
   if (!S.forkId || !S.alarmRaised) {
     scene = "ふつうの夜の雑談。仲間は" + S.name + "の直前の発言に素直に反応する。質問攻めにしたり説教したりしない。" + (S.firstBeat ? "仲間の一人が、ふと「" + S.topic + "」の話を始める。" : "") +
       (!lastIsName() && S.nudgedOnce && gameNow() - Math.max(S.lastPlayerAt, S.lastFakeAt) > CFG.NUDGE_AFTER ? "\n" + S.name + "はしばらく返事がない。仲間は気にせず、仲間どうしで今の話の続きや別の雑談をする。" + S.name + "の返事を催促しない。" : "") +
+      // old friends know the player: the small talk may touch on or tease what they are known for (from the diagnosis)
+      (!S.forkId && knownFor().length ? "\n- 仲間は" + S.name + "を前からよく知っていて、" + S.name + "のことを「" + knownFor().join("」「") + "」人だと思っている。話の流れで、そこに軽く触れたり、軽くいじったりしてもよい（毎回はしない。一晩に一、二度まで）。" : "") +
       // after the takeover nobody has said anything yet: a slightly odd line is just sleepiness or a typo to them
       (S.forkId ? "\n- " + S.name + "の発言が少し食い違っていても、寝ぼけや打ち間違いだと思って、軽く流すかツッコむ程度にする。乗っ取り・なりすまし・同じ人が二人いる、といった疑いは持たない。" : "");
   } else {
@@ -3268,6 +3292,8 @@ function showResult() {
       if (decisive) moved(decisive, "決め手になった発言（" + (chosenSide === "fake" ? "もう一人のあなた" : "あなた") + "）");
       if (!forYou) { const near = top("player"); if (near) moved(near, "届きかけた、あなたの発言"); }
       card.append(el("p", "fc-point", "心が動くポイント：" + f.point));
+      // how this friend's point sat with the player's own way of talking, from the diagnosis (10/14)
+      if (S.axes) { const a = affinity(f); card.append(el("p", "fc-point", "あなたとの相性 " + a.mark + "：" + a.text)); }
       cards.append(card);
     }
     r.append(cards);
