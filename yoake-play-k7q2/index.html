@@ -404,7 +404,7 @@ details.dev>fieldset{margin-top:12px}
 <div id="confirmModal" hidden>
   <div class="ad-box" role="dialog" aria-labelledby="cfTitle">
     <p class="cf-title" id="cfTitle">未クリアの夜があります</p>
-    <p class="note">保存されている進行状況は破棄されますが、新しく夜を始めますか？</p>
+    <p class="note phr"><span>保存されている進行状況は破棄されますが、</span><span>新しく夜を始めますか？</span></p>
     <div class="cf-btns"><button type="button" class="ghost" id="cfCancel">キャンセル</button><button type="button" class="primary" id="cfGo">新しく始める</button></div>
   </div>
 </div>
@@ -848,6 +848,8 @@ const SUSPECT_RE = /二重|二人いる|ふたりいる|2人いる|どっちが�
 const DOUBLE_RE = /二重|二人いる|ふたりいる|2人いる|どっちが本物|本物(は|って)どっち|本物なの|分身|ドッペル|もう一人の/;
 // the bewildered "what do you mean?": fine once, a loop after that
 const ASK_RE = /どういうこと|どゆこと|どういう意味|意味わかんな|意味わからん/;
+// the copy's attacking moves (one turn in two at most)
+const ATTACKS = ["baseline", "bond", "meta", "gaslight", "accuse", "shake"];
 // the copy's empty pleading, kept to now and then (10/13)
 const PLEAD_RE = /信じて|違う|ちがう|本物は(俺|私|僕|うち|自分)|(俺|私|僕|うち|自分)(が|こそ)本物/;
 // the copy putting a question to the other one ("お前さ、…？"): the friends wait for the answer (10/13)
@@ -2504,7 +2506,9 @@ function fakeSystem() {
   return "あなたは、スマホのグループチャットを舞台にした対話型フィクションで、「" + S.name + "」のセリフだけを書く。プレイヤーも了承済みの遊び。\n\n" +
     "# " + S.name + "について\n- 自分こそが本物の" + S.name + "だと信じていて、それ以外の何者でもないと思っている。\n" +
     // distrust first (10/13): it pleaded and denied; now it bites, and never with empty words
-    "- 自分の名前で、自分が送っていない発言を打つ誰かがいたら、それは自分のアカウントを乗っ取った得体の知れない相手だ。常に強い不信感を持ち、その言葉を疑ってかかる。守りに回らず、相手の言葉や振る舞いの綻びを突いて噛みつく。\n" +
+    "- 自分の名前で、自分が送っていない発言を打つ誰かがいたら、それは自分のアカウントを乗っ取った得体の知れない相手だ。常に不信感を持ち、その言葉を疑ってかかる。言い負かされそうなときは守りに回らず、相手の言葉や振る舞いの綻びを突く。\n" +
+    // (10/13, second pass) biting every line made it talk past the friends
+    "- ただし会話の相手はあくまで仲間たち。仲間が話しているときは、その話にきちんと乗って答える。噛みつくのは、もう一人が何か言ったときや、話が止まったときだけ。\n" +
     "- 「信じて」「違う」「俺が本物」のような、根拠のない言葉だけの訴えはしない。言うなら必ず、チャットにある具体的な事実か、相手の振る舞いを根拠にする。\n" +
     // labelled tone-only: the model used to lift these sentences wholesale into its replies (10/12)
     "- 口調のお手本（今夜の早い時間に自分が打った文。口調・語尾・長さだけをまねし、文や話題は使い回さない）：" + (early.slice(-10).map(m => q(m.text)).join(" / ") || "（まだない）") + "\n" +
@@ -2542,9 +2546,10 @@ function fakePrompt(move, doubtMsg) {
     // sense of self counts; insistence and repetition only harden it
     (doubtMsg ? "# 心の揺れ\n直前の、自分が送っていない発言 " + q(doubtMsg.text) + " が、「自分こそ本物の" + S.name + "だ」という自分の確信をどれだけ揺らしたかを、doubt.delta に整数（-" + CONF.MAX_DROP + "〜+" + CONF.MAX_RISE + "）で書く。\n" +
       "- 確信が下がるのは、相手が強く言い張ったときではない。「自分と同じ記憶を持つもう一人がいる」というこの状況で、後から生まれた側には決して辿り着けない自己客観視や、哲学的な矛盾（合わせ鏡のどちらが先か、など）を、今夜の流れに沿って鋭く突きつけられたときだけ。\n" +
-      "- そのうえで刺さりやすいのは：" + piercePoint().replace(/B自身|Bが/g, m => m === "B自身" ? "自分自身" : "自分が") + "。本当に刺さったときだけ -10〜-" + CONF.MAX_DROP + "。\n" +
+      "- そのうえで刺さりやすいのは：" + piercePoint().replace(/B自身|Bが/g, m => m === "B自身" ? "自分自身" : "自分が") + "。本当に刺さったときだけ -10〜-" + CONF.MAX_DROP + "。核心には届かないが、自分の足元が少しぐらつくような指摘なら -5〜-9。\n" +
       "- 仲間への弁明、本物だと言い張るだけ、強い口調で否定するだけの発言は 0。\n" +
-      "- 前と同じ言葉や理屈を繰り返してきたら、壊れた機械のように同じことしか言えない相手こそ偽物だと受け取り、+" + CONF.MAX_RISE + "。絶対に折れない。\n" +
+      // only real repetition hardens it (10/13: the model rated any related line as "the same again" and it never moved)
+      "- 前とほとんど同じ文を、新しい根拠もなくそのまま言い直してきたときだけ、同じことしか言えない相手こそ偽物だと受け取り +5〜+" + CONF.MAX_RISE + "。話題が同じでも、新しい角度や新しい事実を突いてきたなら繰り返しとは見なさず、刺さり具合で判断する。\n" +
       "- 流れを無視した唐突な哲学や決めつけも、逃げ口上に聞こえるので +5〜+" + CONF.MAX_RISE + "。大半は 0。\n\n" : "") +
     '# 出力\nJSONのみ: {"text":"' + S.name + 'の次の一言"' + (doubtMsg ? ',"doubt":{"delta":0,"why":"心の声で15字以内"}' : "") + "}";
 }
@@ -2568,12 +2573,17 @@ function doubtTarget() {
 }
 function applyDoubt(m, doubt) {
   S.doubtSeenId = m.id;
-  // the same words or argument again (the program checks, not only the model): the copy hardens completely (10/13)
-  const earlier = S.msgs.filter(x => x.who === "player" && x.id >= S.forkId && x.id < m.id);
-  if (S.conf < 100 && earlier.some(x => similar(x.text, m.text))) {
+  // saying practically the same sentence again (checked by the program): the copy hardens a step. Only near-identical
+  // lines among the last few count, and it no longer snaps back to 100% (10/13: any shared phrase read as a repeat,
+  // and the certainty never moved)
+  const recentMine = S.msgs.filter(x => x.who === "player" && x.id >= S.forkId && x.id < m.id).slice(-3);
+  const a = norm(m.text);
+  const repeat = a.length >= 4 && recentMine.some(x => { const b = norm(x.text); return b === a || (similar(b, a) && Math.min(a.length, b.length) / Math.max(a.length, b.length) > .8); });
+  if (repeat) {
     const before = S.conf;
-    S.conf = 100; S.panic = false; S.countered = false;
-    S.confHist.push({ id: m.id, text: m.text, before, after: 100, why: "同じことしか言えない" });
+    S.conf = clamp(S.conf + CONF.MAX_RISE, 0, 100);
+    if (S.panic && S.conf >= CONF.PANIC) { S.panic = false; S.countered = false; }
+    if (S.conf !== before) S.confHist.push({ id: m.id, text: m.text, before, after: S.conf, why: "同じことを言っている" });
     return;
   }
   let raw = clamp(Math.round(Number(doubt && doubt.delta) || 0), -CONF.MAX_DROP, CONF.MAX_RISE);
@@ -2842,11 +2852,15 @@ async function fakeTurn() {
   // the first alarm, a question to answer and the panic cannot wait. The other moves (accuse, test, appeal, shake) only
   // on a turn where nobody has just spoken to it: forcing them every other turn made it talk past the conversation (10/12)
   const fresh = S.msgs.filter(m => m.id > (S.fakeSeenId || 0) && m.who !== "fake");
-  // a friend asking it something is answered first; a new line from the other one is no longer a reason to only
-  // defend: it is exactly when to bite (10/13)
+  // a friend asking it something is answered first. It bites when the other one has just spoken to the room, or the
+  // room has gone quiet; while the friends are talking it joins their talk instead. And not every turn: at most every
+  // other turn is an attack (10/13: attacking every turn made it talk past the friends)
   const friendAsked = fresh.some(m => m.who === "friend" && (/[？?]/.test(m.text) || m.text.includes(S.name)));
+  const lastOther = [...S.msgs].reverse().find(m => m.who !== "fake" && !m.epi);
+  const friendsTalking = lastOther && lastOther.who === "friend";
+  const attackedLast = S.moveHist.length && ATTACKS.includes(S.moveHist[S.moveHist.length - 1]) && S.lastMoveTurn === S.fakeTurnN - 1;
   const want = cont ? pickFakeMove() : null;
-  const moveKey = want && (["alarm", "answer", "counter"].includes(want) || (S.alarmRaised && !friendAsked)) ? want : null;
+  const moveKey = want && (["alarm", "answer", "counter"].includes(want) || (S.alarmRaised && !friendAsked && !friendsTalking && !attackedLast)) ? want : null;
   const move = moveKey ? { key: moveKey, text: FAKE_MOVES[moveKey]() } : null;
   const doubtMsg = doubtTarget();
   const res = await ai("偽物", fakePrompt(move, doubtMsg), { system: fakeSystem(), maxTokens: 400 });
@@ -2868,7 +2882,7 @@ async function fakeTurn() {
   // a bare plea ("信じて", "違う", "俺が本物") now and then is human; one after another read as a broken record (10/13)
   if (PLEAD_RE.test(text) && norm(own).length < 16 && S.msgs.filter(m => m.who === "fake").slice(-3).some(m => PLEAD_RE.test(m.text))) return;
   S.forceB = false;
-  if (move) { S.moveHist.push(move.key); if (move.key === "alarm") S.alarmed = true; if (move.key === "shake") S.shook = true; if (move.key === "counter") S.countered = true; }
+  if (move) { S.moveHist.push(move.key); S.lastMoveTurn = S.fakeTurnN; if (move.key === "alarm") S.alarmed = true; if (move.key === "shake") S.shook = true; if (move.key === "counter") S.countered = true; }
   // the copy keeps the player's own typing speed and rhythm
   const due = Math.max(startT + text.length / S.fakeCps, S.lastFakeAt + S.fakeGap, gameNow() + 1);
   enqueue([{ who: "fake", text, due }], false);
