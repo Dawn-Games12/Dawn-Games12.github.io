@@ -80,6 +80,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:12px;pa
 .sys{align-self:center;font-size:12px;color:var(--muted);text-align:center;padding:2px 10px}
 #busyBar{flex:none;margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(229,138,138,.08);display:flex;flex-direction:column;gap:8px}
 #busyBar p{margin:0;font-size:13px;line-height:1.6}
+#busyBar .busy-why{font-size:11px;color:var(--muted);word-break:break-word}
 .busy-btns{display:flex;gap:8px}
 .busy-btns button{flex:1;padding:8px 6px;font-size:12px}
 #typing{flex:none;padding:0 16px 8px}
@@ -657,7 +658,7 @@ details.dev>fieldset{margin-top:12px}
     <!-- a friend "typing…" (10/13): the wait for the AI reads as a person writing. Never shown for the player's name -->
     <div class="msg theirs typing" id="typing" hidden><div class="avatar" id="typingAv"></div><div class="col"><div class="bubble"><i></i><i></i><i></i></div></div></div>
     <!-- Google's side is busy (10/13): say so at once, and what to do -->
-    <div id="busyBar" hidden><p id="busyText"></p><div class="busy-btns" id="busyBtns" hidden><button type="button" class="ghost" id="busyWait">このまま待つ</button><button type="button" class="ghost" id="busySuspend">中断して後で続ける</button></div></div>
+    <div id="busyBar" hidden><p id="busyText"></p><p id="busyWhy" class="busy-why"></p><div class="busy-btns" id="busyBtns" hidden><button type="button" class="ghost" id="busyWait">このまま待つ</button><button type="button" class="ghost" id="busySuspend">中断して後で続ける</button></div></div>
     <footer>
       <input id="msg" type="text" maxlength="200" autocomplete="off" placeholder="メッセージを入力" aria-label="メッセージ">
       <button id="send" type="button">送信<span id="coolbar" aria-hidden="true"></span></button>
@@ -720,6 +721,10 @@ details.dev>fieldset{margin-top:12px}
       <div style="display:flex;align-items:center;gap:10px">
         <p class="note" id="opKeyState" style="flex:1;margin:0"></p>
         <button type="button" class="ghost" id="opKey" style="flex:none;white-space:nowrap;padding:8px 14px">合鍵を替える</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <p class="note" id="opTestOut" style="flex:1;margin:0;word-break:break-word">うまく始められないときは、AIにつながるか確かめられます（1回分の回数を使います）。</p>
+        <button type="button" class="ghost" id="opTest" style="flex:none;white-space:nowrap;padding:8px 14px">AIの接続テスト</button>
       </div>
       <label class="check"><input id="opPaid" type="checkbox"> 有料のAPIを使っている（回数の制限なし・より賢いAI）</label>
       <p class="note" id="opPaidNote">Google AI Studio で、この合鍵を有料の利用に切り替えた人向けです。料金はあなたの Google アカウントにかかります。オンにしなくても、無料枠を超えて遊べた時点で自動で切り替わります。無料の合鍵のままオンにすると、上限に達した時点で自動で元に戻ります。</p>
@@ -1934,7 +1939,7 @@ async function ai(kind, prompt, opt = {}, forceMain) {
     if (e.status === 429) { pauseFor(e.retry || 60); return null; }
     S.errs++;
     const busy = e.status === 408 || e.status === 503 || /overload|high demand|unavailable/i.test(e.message || "");
-    if (busy) { Busy.fail(); return null; }
+    if (busy) { Busy.fail(e); return null; }
     if (S.errs === 1 || S.errs % 5 === 0) addSys("AIの応答に失敗しました（" + (e.message || "").slice(0, 80) + "）");
     return null;
   } finally { renderDev(); }
@@ -2088,25 +2093,24 @@ function contested() { return !!S.forkId && S.msgs.some(m => m.who === "fake") &
 function confronted() { return contested() && !!S.alarmRaised; }
 
 // ---------- Google's side busy or slow (10/13) ----------
-// the first miss says so at once (and that nothing needs resending); a second in a row stops the night's clock, so
-// Google's crowd never eats the player's night, and offers to wait or to suspend. While stopped, one call every 10 s
+// the first miss stops the night's clock at once (so Google's crowd never eats the player's night), says that nothing
+// needs resending, and offers to wait or to suspend. While stopped, one call every 10 s
 // tests the water; the first answer that gets through starts the clock again
 const Busy = {
-  fail() {
+  fail(e) {
     if (!S || S.over || S.phase === "end") return;
     S.busyFails = (S.busyFails || 0) + 1;
     $("#busyBar").hidden = false;
-    if (S.busyFails < 2) {
-      $("#busyText").textContent = "Google のAIが混み合っていて、返事が遅れています。送り直さなくて大丈夫です。届くまで少し待ってください。";
-      $("#busyBtns").hidden = true;
-      return;
-    }
+    // what actually came back, in small print: Google's own words, or that nothing came at all (10/14)
+    $("#busyWhy").textContent = e ? (e.status === 408 ? "（40秒待っても返事がありませんでした）" : "（Google の返事：" + (e.status || "") + " " + String(e.message || "").slice(0, 90) + "）") : "";
+    // the clock stops at the very first miss (10/14: answers and failures took turns, the count never reached two,
+    // and the night ran on while nothing worked)
     if (!S.busyPause) {
       S.busyPause = true; S.busyProbeAt = Date.now();
       if (!S.awaySince && S.t0) { S.awaySince = performance.now(); S.busyHold = true; }
       $("#busyBtns").hidden = false;
     }
-    $("#busyText").textContent = "Google のAIが混み合っているため、夜の時間を止めて待っています。返事が戻れば自動で再開します（このアプリや合鍵の問題ではありません）。";
+    $("#busyText").textContent = "Google のAIの返事が遅れているため、夜の時間を止めて待っています。送り直さなくて大丈夫です。返事が戻れば自動で再開します。";
   },
   clear() {
     if (!S) return;
@@ -2200,7 +2204,10 @@ function tick() {
   // post-takeover silence costs trust with every friend
   if (S.forkId && S.phase !== "final") {
     const silent = t - S.lastPlayerAt;
-    if (silent > CFG.SILENCE_PENALTY && t - S.lastPenalty > 20) { S.lastPenalty = t; S.friends.forEach(f => S.trust[f.name].p -= 1); }
+    // only silence while the room is talking counts: waiting on a room that has gone quiet (Google slow, say) is not
+    // ignoring anyone (10/14: penalties piled up while the AI kept failing)
+    const roomTalking = S.msgs.some(m => m.who !== "player" && !m.epi && t - m.t < 25);
+    if (silent > CFG.SILENCE_PENALTY && roomTalking && t - S.lastPenalty > 20) { S.lastPenalty = t; S.friends.forEach(f => S.trust[f.name].p -= 1); }
     // dodging the other one's question costs a little with everyone, once per question (10/13)
     if (S.fakeAsk && !S.fakeAsk.cost && t - S.fakeAsk.t > 25) { S.fakeAsk.cost = true; S.friends.forEach(f => S.trust[f.name].p -= 1); }
     if (S.fakeAsk && t - S.fakeAsk.t > 60) S.fakeAsk = null;   // the room moves on eventually
@@ -2252,6 +2259,8 @@ function addMsg(who, text, friendName, opt = {}) {
   // the copy has put a question to the other one: it stands until the player answers (10/13)
   if (who === "fake" && S.alarmRaised && /[？?]/.test(text) && CHALLENGE_RE.test(text)) S.fakeAsk = { id: m.id, t, text };
   if (who === "player") S.fakeAsk = null;
+  // typed while Google was not answering ("あれ？", "止まった？"): not part of the contest, so it is not scored (10/14)
+  if (who === "player" && (S.busyPause || S.busyFails)) m.offStage = true;
   // suspicion starts only from words actually said in the chat: someone under the player's name disowning a line
   if (!S.alarmRaised && S.forkId && (who === "player" || who === "fake") && m.id >= S.forkId && ALARM_RE.test(text)) { S.alarmRaised = true; S.contestAt = t; S.alarmId = m.id; }
   // the friends' first reaction after it opens their doubting stage, and with it the scoring (10/12): until a friend
@@ -2627,7 +2636,7 @@ function piercePoint() {
 // the doubt question rides along in the script call, so the reverse route costs no extra AI calls
 function doubtTarget() {
   if (!confronted() || S.realized) return null;
-  const m = [...S.msgs].reverse().find(x => x.who === "player");
+  const m = [...S.msgs].reverse().find(x => x.who === "player" && !x.offStage);
   return m && m.id > (S.doubtSeenId || 0) && m.id >= S.forkId ? m : null;
 }
 function applyDoubt(m, doubt) {
@@ -2830,7 +2839,9 @@ async function writeScript(night) {
   const res = await ai("台本", directorPrompt(beat), { system: directorSystem(), maxTokens: 900 });
   if (S !== night) return;
   S.directorBusy = false; S.lastBeatAt = gameNow();
-  if (res === undefined && S && !S.over) { S.dirty = true; return; }
+  // held back, or failed (Google slow): a fresh script, on the chat as it then stands, as soon as calls go through
+  // again (10/14: waiting out the idle gap after a failure let the talk drift apart)
+  if ((res === undefined || res === null) && S && !S.over) { S.dirty = true; return; }
   if (!S || S.over || S.phase === "final" || !res) return;
   // you spoke, or the copy cried foul, while this script was being written: it would ignore that, so throw it away.
   // But a run of lines from you no longer silences the room (10/13): once the friends have been quiet a while, the
@@ -2953,7 +2964,7 @@ async function evaluate(final) {
     ? S.msgs.filter(m => m.id === S.finalPlayerId || m.id === S.finalFakeId)
     // once the friends have begun to doubt: the line that set them off and everything after it; before that they had no
     // reason to wonder who is real (10/12)
-    : S.msgs.filter(m => (m.who === "player" || m.who === "fake") && m.id >= (S.alarmId ?? S.forkId) && m.id > S.lastEvalId && !m.epi);
+    : S.msgs.filter(m => (m.who === "player" || m.who === "fake") && m.id >= (S.alarmId ?? S.forkId) && m.id > S.lastEvalId && !m.epi && !m.offStage);
   if (!targets.length) { S.lastEvalAt = gameNow(); return; }
   S.evalBusy = true;
   const early = S.msgs.filter(m => m.who === "player" && m.id < S.forkId).slice(-8).map(m => q(m.text)).join(" / ") || "（なし）";
@@ -3659,6 +3670,22 @@ function paintFont() {
 document.querySelectorAll("#opFont button").forEach(b => b.addEventListener("click", () => { store.set("yoake.font", b.dataset.v); paintFont(); }));
 paintFont();
 $("#opKey").addEventListener("click", () => cut(showKeySetup));
+// connection test (10/14): one tiny call with the saved key and the usual model, and Google's own answer shown as is,
+// so "is it Google or the app?" can be told apart without the developer mode
+$("#opTest").addEventListener("click", async () => {
+  const key = store.get("yoake.key"), out = $("#opTestOut"), btn = $("#opTest");
+  if (!key) { out.textContent = "合鍵がまだありません。"; return; }
+  const model = (isPaid() && store.get("yoake.model2")) || store.get("yoake.model") || "gemini-3.5-flash-lite";
+  btn.disabled = true; out.textContent = "確かめています…（最大40秒）";
+  const t0 = performance.now();
+  try {
+    await gemini({ key, model, lowThink: true }, "「OK」とだけ返してください。", { json: false, maxTokens: 50 });
+    out.textContent = "つながりました（" + ((performance.now() - t0) / 1000).toFixed(1) + "秒・" + model + "）。";
+  } catch (e) {
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    out.textContent = (e.status === 408 ? "40秒待っても返事がありませんでした" : "Google の返事：" + (e.status || "") + " " + (e.message || "").slice(0, 160)) + "（" + secs + "秒・" + model + "）";
+  } finally { btn.disabled = false; }
+});
 $("#opPaid").addEventListener("change", e => store.set("yoake.paidManual", e.target.checked ? "1" : "0"));
 $("#optBack").addEventListener("click", () => cut(() => showIntro(true)));
 $("#opPrivacy").addEventListener("click", () => cut(() => only("#privacy")));
