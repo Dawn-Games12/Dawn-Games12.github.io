@@ -886,6 +886,14 @@ const q = t => JSON.stringify(String(t));
 // ---------- inside the Android app (Capacitor) a few things go through the phone instead of the browser ----------
 // the same file runs in a browser too: there Native is null and the web versions are used
 const Native = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() ? window.Capacitor.Plugins : null;
+// in the background or not: the page being hidden, or (in the app) Android pausing it, which does not always hide the
+// page (10/13: sound sometimes played with the app in the background). Everything that makes sound or keeps time listens
+const Away = (() => {
+  const subs = []; let away = false;
+  const set = v => { v = !!v; if (v === away) return; away = v; subs.forEach(f => { try { f(v); } catch (e) {} }); };
+  document.addEventListener("visibilitychange", () => set(document.hidden));
+  return { on: f => subs.push(f), get: () => away, set };
+})();
 // the copy on the web for friends (iPhone, 10/13): no ads there, not even the prototype's stand-ins
 const WEB_COPY = !Native && !/^(localhost|127\.0\.0\.1|)$/.test(location.hostname);
 if (WEB_COPY) document.body.classList.add("web-copy");
@@ -931,7 +939,7 @@ const TitleAV = (() => {
     }, 40);
   }
   // the picture always runs while the title is up (muted it may start without a touch)
-  function roll() { v().play().catch(() => {}); watch(); }
+  function roll() { if (Away.get()) return; v().play().catch(() => {}); watch(); }
   // the sound rises: normally the seamless loop made from the clip's sound (Sound.startLoop), with both players muted;
   // only where that cannot be decoded does the playing clip's own sound rise instead
   let fallback = false;
@@ -943,7 +951,7 @@ const TitleAV = (() => {
   // a browser refuses sound before the first touch, so the clip stays muted until then
   function clipSoundOn() {
     const el = v();
-    if (!el.muted && el.volume >= target() - .01) return;
+    if (Away.get() || (!el.muted && el.volume >= target() - .01)) return;
     el.volume = 0; el.muted = false;
     el.play().then(() => ramp(el, target(), 2500)).catch(() => { el.muted = true; el.play().catch(() => {}); });
   }
@@ -976,7 +984,7 @@ const TitleAV = (() => {
       const el = v();
       if ($("#intro").hidden && el.paused) return;
       const d = el.duration;
-      if (d && !swapping && !el.paused && el.currentTime > d - LEAD) swap();
+      if (d && !swapping && !el.paused && !Away.get() && el.currentTime > d - LEAD) swap();
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
@@ -991,8 +999,8 @@ const TitleAV = (() => {
     catch (e) { return "assets/title-poster.jpg"; }
   }
   // the app going to the background takes the clip (and its sound) with it
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) vids.forEach(x => x.pause());
+  Away.on(away => {
+    if (away) vids.forEach(x => x.pause());
     else if (!$("#intro").hidden || want) { v().play().catch(() => {}); watch(); }
   });
   return { roll, soundOn, soundOff, applyVolume, frame };
@@ -1497,7 +1505,8 @@ const Sound = (() => {
   let ctx = null, master, bgmBus, seBus, noiseBuf;
   const pref = { bgm: store.get("yoake.bgm") !== "0", se: store.get("yoake.se") !== "0", vol: parseFloat(store.get("yoake.vol") || "0.7") };
   function init() {
-    if (ctx) { if (ctx.state === "suspended") ctx.resume(); return true; }
+    // a timer firing while the app is in the background must not wake the sound back up
+    if (ctx) { if (ctx.state === "suspended" && !Away.get()) ctx.resume(); return true; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
     ctx = new AC();
@@ -1649,10 +1658,7 @@ const Sound = (() => {
     if (key === "vol" || key === "bgm") TitleAV.applyVolume();
   }
   // the app in the background (or the tab hidden) goes silent, and picks the sound up again on return
-  document.addEventListener("visibilitychange", () => {
-    if (!ctx) return;
-    if (document.hidden) ctx.suspend(); else ctx.resume();
-  });
+  Away.on(away => { if (!ctx) return; if (away) ctx.suspend(); else ctx.resume(); });
   return { init, startTitle, stopTitle, startLoop, stopLoop, duckLoop, thunder, glitch, flicker, zap, send, receive, set, pref, started: () => !!ctx };
 })();
 $("#optBgm").checked = Sound.pref.bgm; $("#optSe").checked = Sound.pref.se; $("#optVol").value = Math.round(Sound.pref.vol * 100);
@@ -2011,9 +2017,9 @@ function saveNight() {
 }
 function loadSave() { try { return JSON.parse(store.get(SAVE_KEY) || "null"); } catch (e) { return null; } }
 // leaving the app stops the night's clock; coming back starts it again
-document.addEventListener("visibilitychange", () => {
+Away.on(away => {
   if (!S || S.over || !S.t0) return;
-  if (document.hidden) { saveNight(); if (!S.awaySince) S.awaySince = performance.now(); }
+  if (away) { saveNight(); if (!S.awaySince) S.awaySince = performance.now(); }
   else if (S.awaySince && !reportHold) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
 });
 addEventListener("pagehide", saveNight);
@@ -2269,7 +2275,7 @@ function releaseNight() {
   clearTimeout(reportHold); reportHold = null;
   if (S) S.reportHeldMs = (S.reportHeldMs || 0) + (performance.now() - reportHoldFrom);
   if (!$("#reportSheet").hidden) $("#rpHold").textContent = "時間を止められるのはここまでです。夜の時間は再び進んでいます。";
-  if (S && S.awaySince && !document.hidden) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
+  if (S && S.awaySince && !Away.get()) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
 }
 function openReport(m) {
   reportTarget = m;
@@ -3794,7 +3800,9 @@ if (Native && Native.App) {
     if (id === "prologue") ++prologueRun;
     cut(() => showIntro(true));
   });
-  Native.App.addListener("pause", saveNight);   // the app going to the background saves the night
+  // the app going to the background saves the night, and everything goes quiet until it comes back
+  Native.App.addListener("pause", () => { saveNight(); Away.set(true); });
+  Native.App.addListener("resume", () => Away.set(false));
 }
 
 // ---------- dev readout ----------
