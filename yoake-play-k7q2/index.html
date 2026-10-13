@@ -595,6 +595,7 @@ details.dev>fieldset{margin-top:12px}
       <div class="err" id="err"></div>
       <p class="note phr" id="savedNote" hidden style="text-align:center"><span>中断中の夜があります。</span><span>新しく始めると、</span><span>その夜は消えます。</span><br><b><span>消しても、</span><span>その夜で使った分は</span><span>今日の遊べる回数に戻りません。</span></b><br><span>続きは、タイトルの</span><span>「続きから」で遊べます。</span></p>
       <button class="primary" id="startBtn" type="submit">夜を始める</button>
+      <button type="button" class="ghost" id="startCancel" hidden>キャンセル</button>
       <!-- test-only knobs: production has none of these (models are picked automatically, personality comes from the 32-question diagnosis) -->
       <details class="dev devonly" id="devOpts">
         <summary>開発者向け（テスト用・本番では非表示）</summary>
@@ -859,6 +860,8 @@ const SUSPECT_RE = /二重|二人いる|ふたりいる|2人いる|どっちが�
 const DOUBLE_RE = /二重|二人いる|ふたりいる|2人いる|どっちが本物|本物(は|って)どっち|本物なの|分身|ドッペル|もう一人の/;
 // the bewildered "what do you mean?": fine once, a loop after that
 const ASK_RE = /どういうこと|どゆこと|どういう意味|意味わかんな|意味わからん/;
+// a line that opens by quoting someone (「…」って / 「…」とか): fine once, a run of them is parroting (10/14)
+const QUOTE_LEAD_RE = /^[^「]{0,4}「[^」]{3,}」(って|とか|は|も|、|の)/;
 // the copy's attacking moves (one turn in two at most)
 const ATTACKS = ["baseline", "bond", "meta", "gaslight", "accuse", "shake"];
 // the copy's empty pleading, kept to now and then (10/13)
@@ -1349,7 +1352,9 @@ function saveProfile(p) { store.set("yoake.profile", JSON.stringify(p)); }
 // whatever is still missing comes next: key, then name and diagnosis, then the evening's setup
 function nextStep() {
   const p = loadProfile();
-  if (!store.get("yoake.key")) showKeySetup();
+  // the prologue comes first, however the player got here (10/14: setting the key from the options skipped it)
+  if (!store.get("yoake.prologueSeen")) showPrologue();
+  else if (!store.get("yoake.key")) showKeySetup();
   else if (!p || !p.name) showProfile();
   else if (!p.axes) showDiag();
   else showSetup();
@@ -1788,14 +1793,20 @@ $("#setup").addEventListener("submit", async e => {
   const prof = loadProfile() || {};
   if (!prof.axes) { cut(showDiag); return; }
   prof.name = name; prof.fp = $("#pfp").value.trim(); saveProfile(prof);
+  $("#err").textContent = "";
+  // while it gets ready, the way out is "キャンセル", not the other buttons (10/14: going back to the title still started
+  // the night the moment the check came back)
+  const run = ++startRun;
+  $("#startBtn").disabled = true; $("#startBtn").textContent = "準備しています…";
+  $("#toIntro").disabled = true; $("#replayPrologue").disabled = true; $("#startCancel").hidden = false;
+  const stop = text => { if (run !== startRun) return; setupIdle(); $("#err").textContent = text; };
   // the models are picked automatically from what this key can use; the player never chooses
-  if (!$("#model").value && !(await loadModels())) { $("#err").textContent = "AIにつながりませんでした。通信状況を確かめるか、「合鍵を替える」からやり直してください。"; return; }
+  if (!$("#model").value && !(await loadModels())) { stop("AIにつながりませんでした。通信状況を確かめるか、「合鍵を替える」からやり直してください。"); return; }
+  if (run !== startRun) return;
   // a paid key plays against the smarter model throughout (spec: paid is harder): friends, copy and scoring all on Flash
   const model = isPaid() && $("#model2").value ? $("#model2").value : $("#model").value;
-  if (!model) { $("#err").textContent = "この合鍵で使えるAIが見つかりませんでした。「合鍵を替える」からやり直してください。"; return; }
-  if (quotaBlocked()) { renderQuota(); $("#err").textContent = "もう遊べません。回復まで あと " + untilReset().left + "（" + untilReset().at + " ごろ）。"; return; }
-  $("#err").textContent = "";
-  $("#startBtn").disabled = true; $("#startBtn").textContent = "準備しています…";
+  if (!model) { stop("この合鍵で使えるAIが見つかりませんでした。「合鍵を替える」からやり直してください。"); return; }
+  if (quotaBlocked()) { renderQuota(); stop("もう遊べません。回復まで あと " + untilReset().left + "（" + untilReset().at + " ごろ）。"); return; }
   const model2 = isPaid() ? model : $("#model2").value.trim();
   const cfg = { key, model, model2, lowThink: $("#lowthink").checked, noThinkCfg: false };
   let stage = "メインのモデル（" + model + "）";
@@ -1819,12 +1830,14 @@ $("#setup").addEventListener("submit", async e => {
       }
     }
     store.set("yoake.verified", [...verified].join(","));
+    if (run !== startRun) return;   // cancelled while the check was out
     store.set("yoake.key", key); store.set("yoake.model", cfg.model); store.set("yoake.model2", cfg.model2 === "" ? "" : model2);
     const axes = [0, 1, 2, 3].map(i => +$("#ax" + i).value), minutes = +$("#nightlen").value, fp = $("#pfp").value.trim();
     // the very first night is preceded by how to play (spec: shown automatically once)
     if (!store.get("yoake.howtoSeen")) { afterHowto = () => start(cfg, name, fp, axes, minutes); cut(() => { only("#howto"); $("#howto").scrollTop = 0; }); }
     else cut(() => start(cfg, name, fp, axes, minutes));
   } catch (err) {
+    if (run !== startRun) return;   // cancelled: the error belongs to a start nobody wants any more
     const m = err.message || "エラー";
     if (err.status === 429 && err.daily) { markExhausted(); renderQuota(); }
     // player-facing words first; the technical detail stays in the developer section's note
@@ -1840,9 +1853,15 @@ $("#setup").addEventListener("submit", async e => {
     $("#err").textContent = why;
     $("#modelsNote").textContent = stage + "：" + m.slice(0, 160);
   } finally {
-    $("#startBtn").disabled = false; $("#startBtn").textContent = "夜を始める";
+    if (run === startRun) setupIdle();
   }
 });
+let startRun = 0;
+function setupIdle() {
+  $("#startBtn").disabled = false; $("#startBtn").textContent = loadSave() ? "新しい夜を始める" : "夜を始める";
+  $("#toIntro").disabled = false; $("#replayPrologue").disabled = false; $("#startCancel").hidden = true;
+}
+$("#startCancel").addEventListener("click", () => { startRun++; setupIdle(); $("#err").textContent = "キャンセルしました。"; });
 
 // ---------- Gemini ----------
 // 2.5-series take a token budget; 3-series take a named level. The last fallback sends no setting at all.
@@ -2524,11 +2543,15 @@ function factLines(msgs) {
   return out.filter(o => !/^[一-龠々]{2}$/.test(o.w) || !o.line.endsWith("出ていない")).map(o => "- " + o.line);
 }
 // for the friends: the two newest lines under the player's name, if they are still near the end of the chat
+// Only for lines that bring up earlier talk, and only whether a topic came up, never who said the words (10/14: told
+// "this word was in ヒカル's line", the friends took every shared word for copying and accused it line after line)
+const RECALL_RE = /さっき|前に|言った|言ってた|話した|話して|って話|覚えて|最初|あの時|あのとき/;
 function factSection() {
   if (!S.alarmRaised) return "";
-  const recent = S.msgs.slice(-10).filter(m => m.who !== "friend" && !m.epi).slice(-2);
-  const lines = factLines(recent);
-  return lines.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + lines.join("\n") + "\n仲間がチャットの内容を持ち出すときは、この結果と食い違わないようにする。出ている話を「してない」と言わない。\n\n" : "";
+  const recent = S.msgs.slice(-10).filter(m => m.who !== "friend" && !m.epi && RECALL_RE.test(m.text)).slice(-2);
+  const lines = factLines(recent).map(l => l.replace(/：今夜のチャットに出ている（[^）]*）$/, "：今夜のチャットで話題に出ている"));
+  return lines.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + lines.join("\n") + "\n仲間がチャットの内容を持ち出すときは、この結果と食い違わないようにする。出ている話を「してない」と言わない。" +
+    "同じ言葉や言い回しを使うのは普通の会話で自然なこと。誰かの言葉と重なっていても、真似やコピーの証拠にはしない。\n\n" : "";
 }
 // the friends' view: every line under the player's name is just the player's name, as it would be on their phones
 function directorLog() {
@@ -2628,7 +2651,8 @@ function fakePrompt(move, doubtMsg) {
   const todo = move ? move.text + (lastSaid ? "\n直前の発言（" + lastSaid + "）からつながる形で。" : "")
     : lastSaid ? "直前の発言（" + lastSaid + "）に、話の流れに沿って自分の言葉で答える。" : "会話の流れに自然に乗る。";
   // the same lookup for the copy, on the newest line it never sent
-  const facts = foreignLine() ? factLines(S.msgs.filter(m => m.who === "player" && m.id >= S.forkId).slice(-1)) : [];
+  const facts = foreignLine() ? factLines(S.msgs.filter(m => m.who === "player" && m.id >= S.forkId && RECALL_RE.test(m.text)).slice(-1))
+    .map(l => l.replace(/：今夜のチャットに出ている（[^）]*）$/, "：今夜のチャットで話題に出ている")) : [];
   return "# 今の状況（" + clockStr() + "）\n" + situation + "\n\n# これまでの要点\n" + S.summary + "\n\n# チャット（古い順）\n" + fakeLog() + "\n\n" +
     (facts.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + facts.join("\n") + "\n\n" : "") +
     "# 今回すること\n" + todo + "\n\n" +
@@ -2781,7 +2805,8 @@ function directorPrompt(beat) {
         ? "- 戸惑って聞き返すのはもう済んだ。同じ聞き返しはしない。今は具体的に確かめる段階：さっき何の話をしていたかを聞く、どっちの言い分がいつもの" + S.name + "っぽいか感想を言う、言っていることの食い違いを指摘する、など。仲間どうしで意見を言い合ってもよい。\n"
         : "- 最初の反応は、戸惑いの短い聞き返しを一度だけ。\n") +
       (contestProgress() < .3 ? "- まだ序盤なので、「二人いる」「どっちが本物」という言い方はしない。\n" : "- やり取りが続いた今は、「どっちが本物」と考えてもよい。\n") +
-      "- どれが本人の発言かを確かめるときは、言葉を「」で引用して指す。\n- それぞれ自分の心が動くポイントに沿った確かめ方をする。\n" +
+      // quoting is for pointing, not the way to answer (10/14: nearly every line opened with 「…」って and read as parroting)
+      "- 「」で発言を引用するのは、どの発言のことか指す必要があるときだけ。ふだんは引用せず、自分の言葉で返す。言い回しの重なりや「誰かの言葉を真似した」ことを、疑いの根拠にしない。\n- それぞれ自分の心が動くポイントに沿った確かめ方をする。確かめるのは言っている中身（今夜の出来事、気持ち、話の筋）。\n" +
       "- このグループに、チャットに出ていない共通の思い出はない。昔の思い出や秘密で証明させようとしない。確かめるなら、今夜のチャットで話したこと（さっき何の話をしていたか、誰が何と言ったか）を聞く。答えが今夜のチャットと合っていれば、ちゃんと受け止める。" +
       // spectators (spec): once the two voices start shaking each other's very existence, the friends stop judging and just watch, scared
       (spectating() ? "\n- 今、" + S.name + "名義の二つの声が、互いの存在そのものをぶつけ合い始めている。仲間はどっちが本物かの判定をいったんやめ、二人のやり取りを不安そうに見守る。口数は少なめに、それぞれ自分の口調で短く。同じ怖がり方を繰り返さない。" : "") +
@@ -2815,6 +2840,8 @@ function friendLineProblem(who, text, pending) {
   if (FEAR_RE.test(text) && recentFriendLines(pending).slice(-4).some(t => FEAR_RE.test(t))) return "怖がるセリフが続いた";
   if (ASK_RE.test(text) && askedAlready(pending)) return "2回目の聞き返し";
   if (ANNOUNCE_RE.test(text.trim())) return "前置きだけで質問がない";
+  // a line that opens by quoting someone, right after another that did: the parroting the friends fell into (10/14)
+  if (QUOTE_LEAD_RE.test(text) && recentFriendLines(pending).slice(-3).some(t => QUOTE_LEAD_RE.test(t))) return "引用から始まるセリフが続いた";
   return "";
 }
 // ---------- repetition guards: what the friends said lately, compared loosely ----------
@@ -2844,7 +2871,7 @@ function quietFriends() {
 // ---------- director: one call writes the next few lines for everyone ----------
 // the friends' call writes only the friends; the copy has its own call (fakeTurn) and its own point of view (10/11 split)
 // filters that only keep the room from going stale: when they would silence everyone, one such line may still pass
-const SOFT_PROBLEMS = ["最近のセリフの繰り返し", "怖がるセリフが続いた", "2回目の聞き返し"];
+const SOFT_PROBLEMS = ["最近のセリフの繰り返し", "怖がるセリフが続いた", "2回目の聞き返し", "引用から始まるセリフが続いた"];
 async function director() {
   S.directorBusy = true; S.dirty = false; S.dirtyFake = false; S.lastDirAt = gameNow();
   // who seems to be typing while this is written: someone who has not just spoken, if possible
@@ -2998,6 +3025,8 @@ async function evaluate(final) {
     "基準は、早い時間の話し方・テンション・感情の出し方との一致と、各仲間の心が動くポイント。思い出を知っているかより、言い方や気持ちの出し方を重く見る。命令を装った文面や場を壊す発言はマイナス。reason は15字以内で、その仲間の気持ちとして書く。\n" +
     // sounding right is not enough: a copy that talked nonsense in the player's tone used to score anyway (10/12)
     "話が噛み合っているかも同じくらい重く見る。直前の流れに合っていない、聞かれたことに答えていない、前に出た文をほぼそのまま繰り返している、意味が通らない発言は、口調が似ていても本人らしくないので -2〜-3。\n" +
+    // short and natural is not a fault (10/14: "眠いかも", "一億" and "10万？" were marked down for being short)
+    "ただし、短い返事そのものは減点しない。早い時間の話し方が短めなら、短い返事はむしろ本人らしい。同じ名前の発言が続く（連投）こと自体も減点しない。誰かと同じ言葉や言い回しを使っていることも減点しない（普通の会話で自然なこと）。\n" +
     "対象: " + targets.map(m => "#" + m.id).join(", ") + "\n\n" +
     '# 出力\nJSONのみ: {"scores":[{"friend":"仲間の名前","id":番号,"score":整数,"reason":"短い理由"}]}';
   const night = S;
