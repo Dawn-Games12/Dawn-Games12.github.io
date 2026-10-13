@@ -78,6 +78,10 @@ header{display:flex;align-items:center;justify-content:space-between;gap:12px;pa
 .score.p{color:var(--good)} .score.n{color:var(--bad)}
 .thought{font-size:12px;color:var(--accent);font-style:italic;max-width:100%}
 .sys{align-self:center;font-size:12px;color:var(--muted);text-align:center;padding:2px 10px}
+#busyBar{flex:none;margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(229,138,138,.08);display:flex;flex-direction:column;gap:8px}
+#busyBar p{margin:0;font-size:13px;line-height:1.6}
+.busy-btns{display:flex;gap:8px}
+.busy-btns button{flex:1;padding:8px 6px;font-size:12px}
 #typing{flex:none;padding:0 16px 8px}
 #typing .bubble{display:flex;gap:4px;align-items:center;padding:12px 14px}
 #typing .bubble i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:typedot 1.2s ease-in-out infinite}
@@ -652,6 +656,8 @@ details.dev>fieldset{margin-top:12px}
     <div id="log" aria-live="polite"></div>
     <!-- a friend "typing…" (10/13): the wait for the AI reads as a person writing. Never shown for the player's name -->
     <div class="msg theirs typing" id="typing" hidden><div class="avatar" id="typingAv"></div><div class="col"><div class="bubble"><i></i><i></i><i></i></div></div></div>
+    <!-- Google's side is busy (10/13): say so at once, and what to do -->
+    <div id="busyBar" hidden><p id="busyText"></p><div class="busy-btns" id="busyBtns" hidden><button type="button" class="ghost" id="busyWait">このまま待つ</button><button type="button" class="ghost" id="busySuspend">中断して後で続ける</button></div></div>
     <footer>
       <input id="msg" type="text" maxlength="200" autocomplete="off" placeholder="メッセージを入力" aria-label="メッセージ">
       <button id="send" type="button">送信<span id="coolbar" aria-hidden="true"></span></button>
@@ -1808,7 +1814,7 @@ $("#setup").addEventListener("submit", async e => {
       }
     }
     store.set("yoake.verified", [...verified].join(","));
-    store.set("yoake.key", key); store.set("yoake.model", model); store.set("yoake.model2", cfg.model2 === "" ? "" : model2);
+    store.set("yoake.key", key); store.set("yoake.model", cfg.model); store.set("yoake.model2", cfg.model2 === "" ? "" : model2);
     const axes = [0, 1, 2, 3].map(i => +$("#ax" + i).value), minutes = +$("#nightlen").value, fp = $("#pfp").value.trim();
     // the very first night is preceded by how to play (spec: shown automatically once)
     if (!store.get("yoake.howtoSeen")) { afterHowto = () => start(cfg, name, fp, axes, minutes); cut(() => { only("#howto"); $("#howto").scrollTop = 0; }); }
@@ -1821,7 +1827,9 @@ $("#setup").addEventListener("submit", async e => {
       : err.status === 400 && /api key/i.test(m) || err.status === 403 ? "合鍵が正しくないか、まだ有効になっていません。「合鍵を替える」からやり直してください。"
       : err.status === 429 ? "今日の無料枠を使い切りました。回復まで あと " + untilReset().left + "（" + untilReset().at + " ごろ）。"
       : /failed to fetch/i.test(m) ? "Google に接続できませんでした。インターネット接続を確認してください。"
-      : /overload|high demand|unavailable/i.test(m) || err.status === 503 ? "Google のAIが混み合っています。少し時間をおいて、もう一度試してください。"
+      // busy or slow is Google's side: say so plainly, so nobody suspects their key or the app (10/13)
+      : /overload|high demand|unavailable/i.test(m) || err.status === 503 || err.status === 408
+        ? "Google のAIが混み合っていて、返事が届きませんでした。合鍵やこのアプリの問題ではありません。少し時間をおいて、もう一度試してください。"
       // Google's own words are kept, briefly: the next report can then say what actually went wrong
       : "うまく始められませんでした。もう一度試してください。（" + m.slice(0, 80) + "）";
     $("#err").textContent = why;
@@ -1918,13 +1926,15 @@ async function ai(kind, prompt, opt = {}, forceMain) {
   times.push(now);
   S.calls[kind] = (S.calls[kind] || 0) + 1;
   S.modelCalls[model] = (S.modelCalls[model] || 0) + 1;
-  try { return await gemini(S.cfg, prompt, { ...opt, model }); }
+  try { const out = await gemini(S.cfg, prompt, { ...opt, model }); if (S && S.busyFails) Busy.clear(); return out; }
   catch (e) {
     // a climactic call that hits the stronger model's limit falls back to the main model instead of pausing
     if (model !== S.cfg.model) return ai(kind, prompt, opt, true);
     if (e.status === 429 && e.daily) { outOfQuota(); return null; }
     if (e.status === 429) { pauseFor(e.retry || 60); return null; }
     S.errs++;
+    const busy = e.status === 408 || e.status === 503 || /overload|high demand|unavailable/i.test(e.message || "");
+    if (busy) { Busy.fail(); return null; }
     if (S.errs === 1 || S.errs % 5 === 0) addSys("AIの応答に失敗しました（" + (e.message || "").slice(0, 80) + "）");
     return null;
   } finally { renderDev(); }
@@ -1961,7 +1971,7 @@ function start(cfg, name, fp, axes, minutes) {
   S.friends.forEach(f => S.trust[f.name] = { p: 0, f: 0 });
   S.pressureLines = shuffle(PRESSURE);
   store.remove(SAVE_KEY);   // a new night replaces any interrupted one
-  $("#suspendBtn").hidden = false; $("#limitBack").hidden = true; $("#pause").hidden = true;
+  $("#suspendBtn").hidden = false; $("#limitBack").hidden = true; $("#pause").hidden = true; $("#busyBar").hidden = true;
   $("#gname").textContent = S.group;
   $("#gsub").textContent = S.origin + " · 4人";
   $("#log").innerHTML = "";
@@ -2006,7 +2016,7 @@ function gameNow() {
 // ---------- autosave: an interrupted night resumes from where it stopped ----------
 // saved on every message and every few seconds; never during the closing round, so a resume lands just before it
 const SAVE_KEY = "yoake.save";
-const TRANSIENT = ["ticker", "coolTimer", "directorBusy", "evalBusy", "fakeBusy", "typingStart", "sendReadyAt", "pausedSince", "pausedAcc", "resumeAt", "t0", "finalEval", "awaySince", "awayAcc"];
+const TRANSIENT = ["ticker", "coolTimer", "directorBusy", "evalBusy", "fakeBusy", "typingStart", "sendReadyAt", "pausedSince", "pausedAcc", "resumeAt", "t0", "finalEval", "awaySince", "awayAcc", "busyFails", "busyPause", "busyHold", "busyProbeAt"];
 function saveNight() {
   if (!S || S.over || S.ended || !S.t0 || S.phase === "final" || S.phase === "end") return;
   const snap = {};
@@ -2020,7 +2030,7 @@ function loadSave() { try { return JSON.parse(store.get(SAVE_KEY) || "null"); } 
 Away.on(away => {
   if (!S || S.over || !S.t0) return;
   if (away) { saveNight(); if (!S.awaySince) S.awaySince = performance.now(); }
-  else if (S.awaySince && !reportHold) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
+  else if (S.awaySince && !reportHold && !S.busyHold) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
 });
 addEventListener("pagehide", saveNight);
 // the chat's 中断: save, stop everything, back to the title
@@ -2042,7 +2052,7 @@ function resumeNight() {
   $("#gsub").textContent = S.origin + " · 4人";
   $("#log").innerHTML = "";
   S.msgs.forEach(m => $("#log").append(renderMsg(m, false)));
-  $("footer").hidden = false; $("#suspendBtn").hidden = false; $("#limitBack").hidden = true; $("#pause").hidden = true;
+  $("footer").hidden = false; $("#suspendBtn").hidden = false; $("#limitBack").hidden = true; $("#pause").hidden = true; $("#busyBar").hidden = true;
   S.waitFirst = false;
   $("#msg").disabled = false; $("#send").disabled = false; $("#msg").placeholder = "メッセージを入力"; $("#msg").value = "";
   document.querySelectorAll(".screen").forEach(s => { s.hidden = true; });
@@ -2076,6 +2086,47 @@ function paintSky(p) {
 function contested() { return !!S.forkId && S.msgs.some(m => m.who === "fake") && S.msgs.some(m => m.who === "player" && m.id >= S.forkId); }
 // a real confrontation: both voices are in the chat and someone has said out loud that one of them is not them
 function confronted() { return contested() && !!S.alarmRaised; }
+
+// ---------- Google's side busy or slow (10/13) ----------
+// the first miss says so at once (and that nothing needs resending); a second in a row stops the night's clock, so
+// Google's crowd never eats the player's night, and offers to wait or to suspend. While stopped, one call every 10 s
+// tests the water; the first answer that gets through starts the clock again
+const Busy = {
+  fail() {
+    if (!S || S.over || S.phase === "end") return;
+    S.busyFails = (S.busyFails || 0) + 1;
+    $("#busyBar").hidden = false;
+    if (S.busyFails < 2) {
+      $("#busyText").textContent = "Google のAIが混み合っていて、返事が遅れています。送り直さなくて大丈夫です。届くまで少し待ってください。";
+      $("#busyBtns").hidden = true;
+      return;
+    }
+    if (!S.busyPause) {
+      S.busyPause = true; S.busyProbeAt = Date.now();
+      if (!S.awaySince && S.t0) { S.awaySince = performance.now(); S.busyHold = true; }
+      $("#busyBtns").hidden = false;
+    }
+    $("#busyText").textContent = "Google のAIが混み合っているため、夜の時間を止めて待っています。返事が戻れば自動で再開します（このアプリや合鍵の問題ではありません）。";
+  },
+  clear() {
+    if (!S) return;
+    S.busyFails = 0;
+    $("#busyBar").hidden = true;
+    if (S.busyPause) {
+      S.busyPause = false;
+      if (S.busyHold && S.awaySince && !Away.get() && !reportHold) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
+      S.busyHold = false;
+    }
+  },
+  // stopped: a script call now and then, to see whether Google answers again
+  probe() {
+    if (!S || !S.busyPause || S.directorBusy || Date.now() - (S.busyProbeAt || 0) < 10000) return;
+    S.busyProbeAt = Date.now();
+    director();
+  }
+};
+$("#busyWait").addEventListener("click", () => { $("#busyBtns").hidden = true; });
+$("#busySuspend").addEventListener("click", () => { $("#busyBar").hidden = true; $("#suspendBtn").click(); });
 
 // ---------- rate-limit pause (spec 2-2) ----------
 function pauseFor(sec) {
@@ -2114,6 +2165,8 @@ $("#limitBack").addEventListener("click", () => cut(() => { $("#chat").hidden = 
 function tick() {
   if (!S || S.over) return;
   if (S.pausedSince) { updatePause(); $("#typing").hidden = true; return; }
+  // Google busy: the clock is stopped and only the test calls go out (the copy and the scoring rest meanwhile)
+  if (S.busyPause) { Busy.probe(); $("#typing").hidden = !S.directorBusy; renderDev(); return; }
   const t = gameNow();
   paintSky(t / S.total);
   releaseQueue(t);
@@ -2275,7 +2328,7 @@ function releaseNight() {
   clearTimeout(reportHold); reportHold = null;
   if (S) S.reportHeldMs = (S.reportHeldMs || 0) + (performance.now() - reportHoldFrom);
   if (!$("#reportSheet").hidden) $("#rpHold").textContent = "時間を止められるのはここまでです。夜の時間は再び進んでいます。";
-  if (S && S.awaySince && !Away.get()) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
+  if (S && S.awaySince && !Away.get() && !S.busyHold) { S.awayAcc += performance.now() - S.awaySince; S.awaySince = 0; }
 }
 function openReport(m) {
   reportTarget = m;
@@ -3018,7 +3071,7 @@ async function endNight() {
   // night ran out before the closing round could even start: the silence still counts
   if (!S.finalEval && confronted() && !S.realized) S.finalEval = finalJudge();
   if (S.finalEval) await S.finalEval;
-  S.over = true; clearInterval(S.ticker); S.queue = []; $("#typing").hidden = true;
+  S.over = true; clearInterval(S.ticker); S.queue = []; $("#typing").hidden = true; $("#busyBar").hidden = true;
   $("#msg").disabled = true; $("#send").disabled = true;
   paintSky(1); addSys("05:00 夜が明けた");
   // reverse victory: the copy stepped back on its own, so nobody has to choose
