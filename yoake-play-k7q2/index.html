@@ -870,6 +870,8 @@ const QUOTE_LEAD_RE = /^[^「]{0,4}「[^」]{3,}」(って|とか|は|も|、|�
 const ATTACKS = ["baseline", "bond", "meta", "gaslight", "accuse", "shake"];
 // the copy's empty pleading, kept to now and then (10/13)
 const PLEAD_RE = /信じて|違う|ちがう|本物は(俺|私|僕|うち|自分)|(俺|私|僕|うち|自分)(が|こそ)本物/;
+// the copy disowning a line ("言ってない", "俺じゃない"): needed now and then, a run of them reads as a tantrum (10/14)
+const DENY_RE = /言ってな|送ってな|打ってな|(俺|私|僕|うち|自分)じゃな|真似する/;
 // the copy putting a question to the other one ("お前さ、…？"): the friends wait for the answer (10/13)
 const CHALLENGE_RE = /お前|おまえ|あんた|君|そっち|お前さ/;
 // a line that only announces a question ("質問するね", "聞いていい？") and never asks it: the room then sat waiting (10/13)
@@ -2618,8 +2620,10 @@ const FAKE_MOVES = {
 // the copy sees the chat from where it stands: its own lines and the early ones are "自分", the player's later lines
 // are things posted under its name that it never sent. It is never told about A/B, copies or the game. Kept short for Gemma's per-minute token limit.
 const NOT_MINE = "（自分の名前で、自分が送っていない発言）";
+// the whole of tonight, like the friends see it (10/14: shown only the last 25 lines, the copy lost track of who had
+// started which topic early on and made it up, and the friends caught it every time)
 function fakeLog() {
-  return S.msgs.filter(m => !m.epi).slice(-25).map(m =>
+  return tonight().map(m =>
     m.who === "friend" ? m.friend + ": " + q(m.text)
       : m.who === "fake" || !S.forkId || m.id < S.forkId ? "自分: " + q(m.text)
       : NOT_MINE + ": " + q(m.text)).join("\n") || "（まだ発言はない）";
@@ -2633,6 +2637,10 @@ function fakeSystem() {
     "- 自分の名前で、自分が送っていない発言を打つ誰かがいたら、それは自分のアカウントを乗っ取った得体の知れない相手だ。常に不信感を持ち、その言葉を疑ってかかる。言い負かされそうなときは守りに回らず、相手の言葉や振る舞いの綻びを突く。\n" +
     // (10/13, second pass) biting every line made it talk past the friends
     "- ただし会話の相手はあくまで仲間たち。仲間が話しているときは、その話にきちんと乗って答える。噛みつくのは、もう一人が何か言ったときや、話が止まったときだけ。\n" +
+    // (10/14, third pass) it denied every harmless line, snapped "真似するな", and misstated the evening: the friends recoiled
+    "- 自分が送っていない発言でも、当たり障りのないものまで毎回「言ってない」と否定しない。否定するのは、話の流れを変えた発言や、自分らしくない発言だけ。\n" +
+    "- 声を荒げたり「真似するな」と責め立てたりしない。いつもの自分の温度のまま、事実で静かに返す。場の空気を悪くすると、仲間は引いてしまう。\n" +
+    "- 今夜誰が何の話を始めたか、誰が何と言ったかは、チャットで確かめられることだけ言う。確かでないことは言わない。\n" +
     "- 「信じて」「違う」「俺が本物」のような、根拠のない言葉だけの訴えはしない。言うなら必ず、チャットにある具体的な事実か、相手の振る舞いを根拠にする。\n" +
     // labelled tone-only: the model used to lift these sentences wholesale into its replies (10/12)
     "- 口調のお手本（今夜の早い時間に自分が打った文。口調・語尾・長さだけをまねし、文や話題は使い回さない）：" + (early.slice(-10).map(m => q(m.text)).join(" / ") || "（まだない）") + "\n" +
@@ -2652,7 +2660,7 @@ function fakePrompt(move, doubtMsg) {
   const mine = S.msgs.filter(m => m.who === "fake").slice(-6).map(m => q(m.text)).join(" / ");
   const situation = !foreignLine() ? "いつもどおりの夜の雑談。会話の流れに自然に乗る。"
     : "今夜、自分の名前で、自分が送っていない発言がチャットに出ている。誰かが自分のアカウントで打っている。自分が本物だと信じてもらうために、本気で戦う。\n" +
-      "- 否定や弁明だけで終わらせない。自分が送っていない発言には、その中身や言い方の綻びを具体的に突いて反撃する。仲間に話しかけられたときは、きちんと答える。\n" +
+      "- 否定や弁明だけで終わらせない。自分が送っていない発言のうち、話の流れを変えたものや自分らしくないものには、その中身の綻びを具体的に突いて落ち着いて返す。仲間に話しかけられたときは、きちんと答える。\n" +
       "- 本物だと示したいとき（証明を求められた、疑われた、など）は、今夜自分が話したこと（「自分」と書かれた発言）を、自分の記憶として言い換えて持ち出してよい。いまの話に関係するものだけ。\n" +
       "- 前に出た文（自分のものでも誰のものでも）をそのまま繰り返さない。短く引用するなら「」で囲む。直前の自分の発言（" + (mine || "なし") + "）と同じ主張も繰り返さない。" +
       (S.conf < CONF.SPECTATE && !S.panic ? "\n- 心のどこかで自分が揺らぎ始めているのを感じているが、認めたくない。その揺れが言葉の端に少しにじむ。" : "");
@@ -3026,6 +3034,8 @@ async function fakeTurn() {
   if (norm(own).length >= 4 && S.msgs.some(m => !m.epi && similar(m.text, own))) return;
   // a bare plea ("信じて", "違う", "俺が本物") now and then is human; one after another read as a broken record (10/13)
   if (PLEAD_RE.test(text) && norm(own).length < 16 && S.msgs.filter(m => m.who === "fake").slice(-3).some(m => PLEAD_RE.test(m.text))) return;
+  // "I never said that" once more right after saying it twice: the denial run that gave it away (10/14)
+  if (S.alarmed && DENY_RE.test(own) && S.msgs.filter(m => m.who === "fake").slice(-2).some(m => DENY_RE.test(m.text))) return;
   S.forceB = false;
   if (move) { S.moveHist.push(move.key); S.lastMoveTurn = S.fakeTurnN; if (move.key === "alarm") S.alarmed = true; if (move.key === "shake") S.shook = true; if (move.key === "counter") S.countered = true; }
   // the copy keeps the player's own typing speed and rhythm
