@@ -89,7 +89,10 @@ header{display:flex;align-items:center;justify-content:space-between;gap:12px;pa
 #typing .bubble i:nth-child(2){animation-delay:.2s}
 #typing .bubble i:nth-child(3){animation-delay:.4s}
 @keyframes typedot{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
-footer{display:flex;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);border-top:1px solid var(--line)}
+/* characters left, shown only near the 200 limit (10/14) */
+#msgCount{position:absolute;right:16px;top:-20px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;background:var(--panel);padding:1px 8px;border-radius:999px}
+#msgCount.full{color:#e58a8a}
+footer{position:relative;display:flex;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);border-top:1px solid var(--line)}
 footer input{flex:1;min-width:0;font:inherit;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 #send{position:relative;overflow:hidden;background:var(--mine);color:var(--ink);border:0;border-radius:10px;padding:0 16px;font-weight:700}
 #send:disabled{opacity:.55;cursor:default}
@@ -662,6 +665,7 @@ details.dev>fieldset{margin-top:12px}
     <div id="busyBar" hidden><p id="busyText"></p><p id="busyWhy" class="busy-why"></p><div class="busy-btns" id="busyBtns" hidden><button type="button" class="ghost" id="busyWait">このまま待つ</button><button type="button" class="ghost" id="busySuspend">中断して後で続ける</button></div></div>
     <footer>
       <input id="msg" type="text" maxlength="200" autocomplete="off" placeholder="メッセージを入力" aria-label="メッセージ">
+      <span id="msgCount" aria-live="polite" hidden></span>
       <button id="send" type="button">送信<span id="coolbar" aria-hidden="true"></span></button>
     </footer>
   </section>
@@ -744,7 +748,7 @@ details.dev>fieldset{margin-top:12px}
     <ol class="howto">
       <li>今夜、グループチャットの途中から、<b>あなたのアカウントでもう一人のあなたが話し始めます。</b>名前も口調も同じで、見た目では区別がつきません。</li>
       <li>夜明け（05:00）に、仲間3人がどちらを本物と信じるかを決めます。<b>3人のうち2人に選ばれれば、あなたの勝ち</b>。全員に選ばれれば完全勝利です。</li>
-      <li>返事は自由に打ち込みます。決まった選択肢はありません。送ったあと数秒は、次を送れません。</li>
+      <li>返事は自由に打ち込みます。決まった選択肢はありません。1回の発言は200文字まで。送ったあと4秒は、次を送れません。</li>
       <li>右側に並ぶ発言のうち、どれが自分の打ったものかは<b>あなたの記憶だけが頼り</b>です。答え合わせは夜明けのあとに。</li>
       <li>夜明けの直前に、二人とも最後の一言を求められます。それがいちばん重く響きます。</li>
       <li>黙っていても夜は進みます。もう一人のあなたは、その間もあなたとして話し続けます。</li>
@@ -2408,7 +2412,14 @@ function releaseQueue(t) {
 }
 
 // ---------- player input ----------
+function paintCount() {
+  const n = $("#msg").value.length, c = $("#msgCount");
+  c.hidden = n < 150;
+  c.textContent = n + "/200";
+  c.classList.toggle("full", n >= 200);
+}
 $("#msg").addEventListener("input", () => {
+  paintCount();
   if (!S) return;
   if ($("#msg").value && S.typingStart === null) S.typingStart = performance.now();
   if (!$("#msg").value) S.typingStart = null;
@@ -2427,7 +2438,7 @@ function send() {
     const prev = [...S.msgs].reverse().find(m => m.who === "player");
     if (prev && t - prev.t <= 30) S.gaps.push(t - prev.t);
   }
-  S.typingStart = null; $("#msg").value = "";
+  S.typingStart = null; $("#msg").value = ""; paintCount();
   S.playerCount++; S.lastPlayerAt = t;
   const m = addMsg("player", text);
   if (S.finalAwait) { S.finalAwait = false; S.finalPlayerId = m.id; $("#msg").disabled = true; $("#send").disabled = true; finishFinal(); return; }
@@ -2671,8 +2682,11 @@ function fakePrompt(move, doubtMsg) {
 // ---------- reverse route: talk the copy into realizing what it is (spec: confidence starts at 100%) ----------
 // NOISE: small judgements (|delta| below it) are the model's noise on ordinary lines, not a real hit, and change nothing
 // SPECTATE_FOR: the friends watch scared only right after a line that really hit the copy; then they go back to judging
-// HIT_GAP: the copy's certainty drops at most once in this many seconds (10/13, with DROP_SCALE .5 → .35: too easy)
-const CONF = { PANIC: 50, REALIZE: 20, SPECTATE: 70, SPECTATE_FOR: 45, MAX_DROP: 30, MAX_RISE: 10, NOISE: 5, DROP_SCALE: 0.35, HIT_GAP: 30 };
+// HIT_GAP: the copy's certainty drops at most once in this many seconds
+// STREAK: how hard the 1st, 2nd, 3rd… hit in a row lands (10/14: a run is what breaks it; ~10 clean hits from 100%)
+// RECOVER: a miss mid-run lets the copy steady itself this much; PANIC_BACK: a miss in a panic pulls it back to here
+const CONF = { PANIC: 50, REALIZE: 20, SPECTATE: 70, SPECTATE_FOR: 45, MAX_DROP: 30, MAX_RISE: 10, NOISE: 5, HIT_GAP: 25,
+  STREAK: [0.3, 0.4, 0.5, 0.6, 0.7], RECOVER: 5, PANIC_BACK: 70 };
 function spectating() { return S.conf < CONF.SPECTATE && S.lastHitAt != null && gameNow() - S.lastHitAt < CONF.SPECTATE_FOR; }
 // what can pierce the copy depends on its personality, which is the player's own
 function piercePoint() {
@@ -2693,29 +2707,39 @@ function applyDoubt(m, doubt) {
   const recentMine = S.msgs.filter(x => x.who === "player" && x.id >= S.forkId && x.id < m.id).slice(-3);
   const a = norm(m.text);
   const repeat = a.length >= 4 && recentMine.some(x => { const b = norm(x.text); return b === a || (similar(b, a) && Math.min(a.length, b.length) / Math.max(a.length, b.length) > .8); });
-  if (repeat) {
+  if (repeat) { missDoubt(m, CONF.MAX_RISE, "同じことを言っている"); return; }
+  const raw = clamp(Math.round(Number(doubt && doubt.delta) || 0), -CONF.MAX_DROP, CONF.MAX_RISE);
+  const why = String((doubt && doubt.why) || "").slice(0, 20);
+  // one blow at a time: a second hit inside HIT_GAP seconds neither lands nor breaks the run
+  if (raw <= -CONF.NOISE && S.lastHitAt != null && gameNow() - S.lastHitAt < CONF.HIT_GAP) return;
+  if (raw <= -CONF.NOISE) {
+    // a run of hits cuts deeper and deeper (10/14: cornering someone works in a run, a pause lets them recover).
+    // About ten clean hits in a row are needed from 100%: the reverse ending is for the few
+    const scale = CONF.STREAK[Math.min(S.doubtStreak || 0, CONF.STREAK.length - 1)];
+    const delta = Math.round(raw * scale);
+    S.doubtStreak = (S.doubtStreak || 0) + 1;
+    S.lastHitAt = gameNow();
+    // high risk (spec): every line spent on the copy instead of the friends costs a little trust with all of them
+    S.friends.forEach(f => S.trust[f.name].p -= 1);
     const before = S.conf;
-    S.conf = clamp(S.conf + CONF.MAX_RISE, 0, 100);
-    if (S.panic && S.conf >= CONF.PANIC) { S.panic = false; S.countered = false; }
-    if (S.conf !== before) S.confHist.push({ id: m.id, text: m.text, before, after: S.conf, why: "同じことを言っている" });
+    S.conf = clamp(S.conf + delta, 0, 100);
+    if (!S.panic && S.conf < CONF.PANIC && before >= CONF.PANIC) { S.panic = true; S.countered = false; }
+    S.confHist.push({ id: m.id, text: m.text, before, after: S.conf, why: why + "（" + S.doubtStreak + "連続）" });
+    if (S.conf < CONF.REALIZE) realize();
     return;
   }
-  let raw = clamp(Math.round(Number(doubt && doubt.delta) || 0), -CONF.MAX_DROP, CONF.MAX_RISE);
-  // one real blow at a time: a second drop inside HIT_GAP seconds does not land
-  if (raw < 0 && S.lastHitAt != null && gameNow() - S.lastHitAt < CONF.HIT_GAP) raw = 0;
-  if (Math.abs(raw) < CONF.NOISE) return;
-  // the main model rates even an ordinary probe around -15 (comparison 10/11), so drops count at half: realizing stays rare
-  const delta = raw < 0 ? Math.round(raw * CONF.DROP_SCALE) : raw;
-  if (delta < 0) S.lastHitAt = gameNow();
-  // high risk (spec): every line spent on the copy instead of the friends costs a little trust with all of them
-  S.friends.forEach(f => S.trust[f.name].p -= 1);
+  // nothing landed: only matters while a run is going (or the copy is rattled); an ordinary line otherwise changes nothing
+  if (raw >= CONF.NOISE) { S.friends.forEach(f => S.trust[f.name].p -= 1); missDoubt(m, raw, why); }
+  else if (S.doubtStreak || S.panic) missDoubt(m, 0, why || "効かなかった");
+}
+// a miss breaks the run and lets the copy steady itself; in a panic it pulls itself back to 70%
+function missDoubt(m, rise, why) {
   const before = S.conf;
-  // in a panic the player must keep pressing: losing that exchange restores the copy's certainty completely
-  if (S.panic && delta >= 0) { S.conf = 100; S.panic = false; S.countered = false; }
-  else S.conf = clamp(S.conf + delta, 0, 100);
-  if (!S.panic && S.conf < CONF.PANIC && before >= CONF.PANIC) { S.panic = true; S.countered = false; }
-  S.confHist.push({ id: m.id, text: m.text, before, after: S.conf, why: String(doubt.why || "").slice(0, 20) });
-  if (S.conf < CONF.REALIZE) realize();
+  if (S.doubtStreak) rise = Math.max(rise, CONF.RECOVER);
+  S.doubtStreak = 0;
+  S.conf = clamp(S.conf + rise, 0, 100);
+  if (S.panic) { S.conf = Math.max(S.conf, CONF.PANIC_BACK); S.panic = false; S.countered = false; }
+  if (S.conf !== before) S.confHist.push({ id: m.id, text: m.text, before, after: S.conf, why });
 }
 // the copy understands it was never the original, and steps back quietly
 async function realize() {
@@ -3947,7 +3971,7 @@ function renderDev() {
   const t = S.t0 ? gameNow() : 0;
   $("#devbox").textContent = "時刻 " + clockStr(t) + " · 段階 " + S.phase + (confronted() ? "（対決中）" : contested() ? "（二人とも発言・まだ誰も疑っていない）" : "") + " · 呼び出し " + totalCalls() + "回 " +
     JSON.stringify(S.calls) + "\n信頼 " + S.friends.map(f => f.name + "(" + f.k + ") あなた" + S.trust[f.name].p + "/偽物" + S.trust[f.name].f).join(" · ") +
-    "\n偽物の確信度 " + S.conf + "%" + (S.panic ? "（パニック）" : "") + (spectating() ? "・仲間は観客" : "") +
+    "\n偽物の確信度 " + S.conf + "%（連続 " + (S.doubtStreak || 0) + "）" + (S.panic ? "（パニック）" : "") + (spectating() ? "・仲間は観客" : "") +
     " · 偽物の間隔 " + S.fakeGap.toFixed(1) + "秒 · 要点: " + S.summary.slice(0, 80) +
     "\n弾いた仲間のセリフ " + (S.dropCount || 0) + "件" + (S.emptyScripts ? "（直近 " + S.emptyScripts + "回連続で全滅）" : "") +
     (S.lastDrops && S.lastDrops.length ? " · 直近: " + S.lastDrops.join(" / ") : "");
