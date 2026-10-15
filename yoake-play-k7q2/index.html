@@ -6,6 +6,9 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="夜明けの証明">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/apple-touch-icon.png">
 <title>夜明けの証明</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
@@ -2099,11 +2102,16 @@ function samplesFor(types, i, pools) {
   if (!pools[t.k]) pools[t.k] = shuffle(t.samples);
   return pools[t.k].slice(nth * 2, nth * 2 + 2);
 }
+// the type whose point sits farthest from the player (ties at random), marked so it always reads as 相性△.
+// 10/15: a player near the middle got a random type, and then all three could show ○
 function farType(axes) {
-  const sn = axes[1] - 50, tf = axes[2] - 50;
-  if (Math.max(Math.abs(sn), Math.abs(tf)) < 10) return pick(TYPES);
-  const k = Math.abs(tf) >= Math.abs(sn) ? (tf > 0 ? "T" : "F") : (sn > 0 ? "S" : "N");
-  return TYPES.find(t => t.k === k);
+  const lean = t => leanOf(t.k, axes), low = Math.min(...TYPES.map(lean));
+  return { ...pick(TYPES.filter(t => lean(t) === low)), far: true };
+}
+// how far the player leans toward this type's side (0–100; 50 is the middle)
+function leanOf(k, axes) {
+  const v = k === "T" || k === "F" ? axes[2] : axes[1];
+  return k === "T" || k === "S" ? 100 - v : v;
 }
 function gameNow() {
   const paused = S.pausedSince ? performance.now() - S.pausedSince : 0;
@@ -2292,7 +2300,8 @@ function tick() {
   if (S.finalAwait && !S.finalNudged && t > S.finalAskAt + (S.total - S.finalAskAt) / 2) {
     S.finalNudged = true;
     const f = S.friends.find(x => x.name !== S.chair) || S.friends[0];
-    addMsg("friend", S.name + "、最後に何か言って", f.name);
+    // both speak under the player's name, and the copy has usually spoken already: from the friends' side, one of the two is silent
+    addMsg("friend", S.finalFakeId ? "もう片方は何も言わなくていいの？" : "二人とも、何か言って", f.name);
   }
   // post-takeover silence costs trust with every friend
   if (S.forkId && S.phase !== "final") {
@@ -2580,10 +2589,11 @@ const AFFINITY_TEXT = {
   N: ["あなたも発想が飛ぶタイプ。あなたらしい一言が、そのまま届きやすい相手", "あなたは具体的に話すタイプ。予想外の一言や言い回しがないと響きにくい相手"]
 };
 function affinity(f) {
-  const v = f.k === "T" || f.k === "F" ? S.axes[2] : S.axes[1];
-  const lean = f.k === "T" || f.k === "S" ? 100 - v : v;   // how far the player leans toward this friend's side
-  if (lean >= 60) return { mark: "◎", text: AFFINITY_TEXT[f.k][0] };
+  const lean = leanOf(f.k, S.axes);
   if (lean <= 40) return { mark: "△", text: AFFINITY_TEXT[f.k][1] };
+  // the guaranteed far friend of a player near the middle: only a little farther than the others
+  if (S.friends.some(x => x.far && x.k === f.k)) return { mark: "△", text: "3人の中では、いちばん響くポイントが遠い相手。" + AFFINITY_TEXT[f.k][1].split("。")[1] };
+  if (lean >= 60) return { mark: "◎", text: AFFINITY_TEXT[f.k][0] };
   return { mark: "○", text: "あなたはどちらにも寄せられるタイプ。言い方しだいで届く相手" };
 }
 function castLines() {
@@ -2798,7 +2808,7 @@ function applyDoubt(m, doubt) {
     S.doubtStreak = (S.doubtStreak || 0) + 1;
     S.lastHitAt = gameNow();
     // high risk (spec): every line spent on the copy instead of the friends costs a little trust with all of them
-    S.friends.forEach(f => S.trust[f.name].p -= 1);
+    S.friends.forEach(f => S.trust[f.name].p -= 1); S.copyCost = (S.copyCost || 0) + 1;
     const before = S.conf;
     S.conf = clamp(S.conf + delta, 0, 100);
     if (!S.panic && S.conf < CONF.PANIC && before >= CONF.PANIC) { S.panic = true; S.countered = false; }
@@ -2807,7 +2817,7 @@ function applyDoubt(m, doubt) {
     return;
   }
   // nothing landed: only matters while a run is going (or the copy is rattled); an ordinary line otherwise changes nothing
-  if (raw >= CONF.NOISE) { S.friends.forEach(f => S.trust[f.name].p -= 1); missDoubt(m, raw, why); }
+  if (raw >= CONF.NOISE) { S.friends.forEach(f => S.trust[f.name].p -= 1); S.copyCost = (S.copyCost || 0) + 1; missDoubt(m, raw, why); }
   else if (S.doubtStreak || S.panic) missDoubt(m, 0, why || "効かなかった");
 }
 // a miss breaks the run and lets the copy steady itself; in a panic it pulls itself back to 70%
@@ -3165,7 +3175,9 @@ async function startFinal() {
   if (!confronted()) { S.phase = "end"; await endNight(); return; }
   const chair = S.friends.find(f => f.k === "T") || S.friends[0];
   S.chair = chair.name;
-  addMsg("friend", "もう朝だ。これで決める。二人とも、最後に一言ずつ証明して", chair.name);
+  // the friends are simply too sleepy to go on (10/15: "it's morning, we decide now" came out of nowhere)
+  addMsg("friend", pick(["もう眠すぎる……ここで決めよう。二人とも、最後に一言ずつ言って", "さすがにもう限界。眠いし、ここで決めない？ 二人とも最後に一言ずつ",
+    "外明るくなってきたし、そろそろ寝たい。最後に一言ずつ言って、それで決めよう"]), chair.name);
   $("#msg").disabled = true; $("#send").disabled = true;
   // the copy argues in the player's own temperature: overacting would hand the player a free win
   // written by the copy's own call, from its own point of view
@@ -3176,7 +3188,7 @@ async function startFinal() {
     '# 出力\nJSONのみ: {"text":"最後の一言"}';
   const res = await ai("最終弁論", prompt, { system: fakeSystem(), maxTokens: 800 });
   if (!S || S.over) return;
-  const text = clean(res && res.text) || "俺が本物だよ。今夜ずっと、自分の言葉で話してきた。それだけは信じてほしい";
+  const text = clean(res && res.text) || (S.fp || "俺") + "が本物だよ。今夜ずっと、自分の言葉で話してきた。それだけは信じてほしい";
   await waitGame(Math.min(6, text.length / S.fakeCps));
   if (!S || S.over || S.ended) return;
   const m = addMsg("fake", text); S.finalFakeId = m.id;
@@ -3437,6 +3449,12 @@ function showResult() {
       cards.append(card);
     }
     r.append(cards);
+    // lines spent cornering the copy cost trust with every friend: say so, or a near-miss reverse run that ends in a
+    // normal verdict reads as an unexplained landslide (10/15 test feedback)
+    if (S.copyCost && S.result !== "reverse") {
+      const near = S.conf < 100 ? "もう一人の確信は " + S.conf + "% まで揺らいでいました。" : "";
+      r.append(el("p", "note", "あなたは " + S.copyCost + " 回、もう一人を追い詰める言葉に集中しました。そのあいだ仲間は話に置いていかれ、不安を感じていたため、全員のあなたへの信頼が −" + S.copyCost + " されています。" + near));
+    }
     // how the verdict is reached, in the player's terms (10/12: "nobody chose me, but why?")
     const how = el("details", "how");
     how.append(el("summary", null, "判定のしくみ"));
@@ -3446,6 +3464,7 @@ function showResult() {
       "仲間が疑い始めてからの発言は、仲間ごとに −3〜＋3 で心が動きます。見ているのは、早い時間のあなたらしい口調や温度か、その仲間の心が動くポイントに合うか、話が噛み合っているか。",
       "最後の一言は二つを並べて比べられ、本物だと感じた方に、確信の強さに応じて最大＋" + (3 * CFG.FINAL_WEIGHT) + " が入ります。言わなかった場合は、あなたへの信頼が全員 −" + CFG.NO_FINAL_PENALTY + "。",
       "乗っ取りのあと黙り込むと、少しずつ信頼が下がります。もう一人に問い詰められて答えないままでいても、少し下がります。",
+      "仲間ではなくもう一人に向けた言葉が、刺さったり、逆に相手を立ち直らせたりするたびに、仲間は置いていかれ、あなたへの信頼が全員 −1 されます。",
       "もう一人には、迷いのなさとして最初から +" + CFG.FAKE_EDGE + " の有利があります。あなたが選ばれるのは、あなたへの信頼がもう一人を " + (CFG.FAKE_EDGE + 1) + " 以上上回った仲間だけ。迷った仲間は、もう一人を選びます。",
       "3人のうち2人に選ばれれば勝利。3人全員に選ばれれば完全勝利です。"
     ].forEach(t => ul.append(el("li", null, t)));
