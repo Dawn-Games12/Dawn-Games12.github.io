@@ -80,7 +80,8 @@ header{display:flex;align-items:center;justify-content:space-between;gap:12px;pa
 .chip.fk{background:var(--fake)} .chip.pl{background:var(--mine)}
 .score.p{color:var(--good)} .score.n{color:var(--bad)}
 .thought{font-size:12px;color:var(--accent);font-style:italic;max-width:100%}
-.sys{align-self:center;font-size:12px;color:var(--muted);text-align:center;padding:2px 10px}
+/* a dark pill behind system lines: plain gray text vanished on the bright dawn sky (10/16) */
+.sys{align-self:center;font-size:12px;color:#e6e8f2;text-align:center;padding:3px 12px;background:rgba(8,10,22,.62);border-radius:999px;max-width:88%}
 #busyBar{flex:none;margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(229,138,138,.08);display:flex;flex-direction:column;gap:8px}
 #busyBar p{margin:0;font-size:13px;line-height:1.6}
 #busyBar .busy-why{font-size:11px;color:var(--muted);word-break:break-word}
@@ -234,6 +235,13 @@ body.banner-on #result,body.banner-on #options{padding-bottom:calc(40px + var(--
 @keyframes bolt{0%{opacity:.95}22%{opacity:.15}36%{opacity:.6}100%{opacity:0}}
 #bootClock{position:relative;font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:46px;letter-spacing:.18em;color:#ff3b3b;text-shadow:0 0 10px rgba(255,40,40,.85),0 0 32px rgba(255,0,0,.45);opacity:0}
 #bootClock.on{opacity:1}
+/* dawn (10/16): the opening's dying red 04:58 answered by a pale 05:00 before the sky shows */
+#dawn{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;opacity:0;transition:opacity .8s}
+#dawn.show{opacity:1}
+#dawn .t{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:52px;letter-spacing:.18em;color:#ff3b3b;text-shadow:0 0 10px rgba(255,40,40,.85),0 0 32px rgba(255,0,0,.45);transition:color 1.4s,text-shadow 1.4s}
+#dawn .t.lit{color:#ffe9c7;text-shadow:0 0 14px rgba(255,214,150,.75),0 0 46px rgba(255,170,90,.4)}
+#dawn .w{font-family:var(--display);font-size:18px;letter-spacing:.3em;color:#f3e6d2;opacity:0;transition:opacity 1.2s}
+#dawn .w.on{opacity:1}
 #intro.booting .logo-wrap,#intro.booting .tap{opacity:0!important;transition:none!important;animation:none!important}
 #intro.boot-pop .logo-wrap{transition:opacity .12s steps(2)!important}
 /* logo.png is the mark cut out of its black frame with real transparency */
@@ -867,7 +875,12 @@ const QUIRKS = [
   { fp: "私", habit: "「…」をよく使う" }
 ];
 // a friend voicing suspicion of a second writer; only allowed once someone in the chat has actually said "that wasn't me"
-const SUSPECT_RE = /二重|二人いる|ふたりいる|2人いる|どっちが本物|本物(は|って)どっち|本物なの|偽物|乗っ取|なりすま|別人|分身|ドッペル|コピー|もう一人の|アカウント.{0,6}(使われ|取られ|おかし)|誰が打って|誰か(が|に).{0,6}(打って|使って)/;
+// "which one is the real one" (not "which do you prefer" in small talk)
+function whichRe() { return new RegExp("どっち.{0,4}(本物|本人|偽|" + S.name + ")|二人いる|ふたりいる|2人いる|本物(は|って)どっち"); }
+// a line under the player's name saying in so many words that someone else is typing
+const TAKEOVER_RE = /乗っ取|なりすま|偽物|ニセモノ|にせもの|別の(誰|人|やつ)|誰か(が|に)|勝手に(打|送|返|書)|俺の名前で|私の名前で|僕の名前で/;
+function takeoverSaid() { return !!S.forkId && S.msgs.some(m => (m.who === "player" || m.who === "fake") && m.id >= S.forkId && TAKEOVER_RE.test(m.text)); }
+const SUSPECT_RE =/二重|二人いる|ふたりいる|2人いる|どっちが本物|本物(は|って)どっち|本物なの|偽物|乗っ取|なりすま|別人|分身|ドッペル|コピー|もう一人の|アカウント.{0,6}(使われ|取られ|おかし)|誰が打って|誰か(が|に).{0,6}(打って|使って)/;
 // the hard words ("two of them", "which is real") wait until the confrontation has run a little (spec: suspicion grows in stages)
 const DOUBLE_RE = /二重|二人いる|ふたりいる|2人いる|どっちが本物|本物(は|って)どっち|本物なの|分身|ドッペル|もう一人の/;
 // the bewildered "what do you mean?": fine once, a loop after that
@@ -1747,9 +1760,28 @@ const Sound = (() => {
     if (key === "se") seBus.gain.value = value ? 1 : 0;
     if (key === "vol" || key === "bgm") TitleAV.applyVolume();
   }
+  // dawn (10/16): one soft, warm swell as 05:00 lights — a bell-like chord in the middle register (a phone speaker
+  // buzzes on anything deep), rising slowly and fading for a few seconds. The only sound of the night that is not a message
+  function dawn() {
+    if (!ctx) return;
+    const t = ctx.currentTime, out = ctx.createGain(), lp = ctx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 2600; out.gain.value = 1;
+    lp.connect(out); out.connect(seBus);
+    // E major, open: E4 B4 E5 G#5, each partial a little later and quieter than the one below
+    [[329.63, .11, 0], [493.88, .08, .12], [659.26, .06, .25], [830.61, .035, .4]].forEach(([f, lvl, at]) => {
+      for (const det of [-3, 3]) {        // two slightly detuned voices: a shimmer instead of a plain beep
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = f; o.detune.value = det;
+        g.gain.setValueAtTime(.0001, t + at);
+        g.gain.exponentialRampToValueAtTime(lvl / 2, t + at + 1.3);
+        g.gain.setTargetAtTime(.0001, t + at + 1.6, 1.3);
+        o.connect(g); g.connect(lp); o.start(t + at); o.stop(t + at + 8);
+      }
+    });
+  }
   // the app in the background (or the tab hidden) goes silent, and picks the sound up again on return
   Away.on(away => { if (!ctx) return; if (away) ctx.suspend(); else ctx.resume(); });
-  return { init, startTitle, stopTitle, startLoop, stopLoop, duckLoop, thunder, glitch, flicker, zap, send, receive, set, pref, started: () => !!ctx };
+  return { init, startTitle, stopTitle, startLoop, stopLoop, duckLoop, thunder, glitch, flicker, zap, dawn, send, receive, set, pref, started: () => !!ctx };
 })();
 $("#optBgm").checked = Sound.pref.bgm; $("#optSe").checked = Sound.pref.se; $("#optVol").value = Math.round(Sound.pref.vol * 100);
 $("#optBgm").addEventListener("change", e => Sound.set("bgm", e.target.checked));
@@ -2288,7 +2320,8 @@ function tick() {
     if (!S.nudgedOnce && last && last.who === "friend" && last.id !== S.nudgedId && t - last.t > CFG.NUDGE_AFTER && !S.queue.length) {
       S.nudgedOnce = true;
       S.nudgedId = last.id;
-      addMsg("friend", pick(NUDGES).replace("{name}", S.name), pick(S.friends).name);
+      const nudge = pick(NUDGES).replace("{name}", S.name);
+      addMsg("friend", fearStage() >= 2 ? nudge.replace(LAUGH_TAIL_RE, "") : nudge, pick(S.friends).name);
     }
   }
   // late-night pressure lines (spec 4-1), templates
@@ -2592,7 +2625,8 @@ function affinity(f) {
   const lean = leanOf(f.k, S.axes);
   if (lean <= 40) return { mark: "△", text: AFFINITY_TEXT[f.k][1] };
   // the guaranteed far friend of a player near the middle: only a little farther than the others
-  if (S.friends.some(x => x.far && x.k === f.k)) return { mark: "△", text: "3人の中では、いちばん響くポイントが遠い相手。" + AFFINITY_TEXT[f.k][1].split("。")[1] };
+  // (10/16: "いちばん遠い" read wrong when two friends shared the type and both showed △)
+  if (S.friends.some(x => x.far && x.k === f.k)) return { mark: "△", text: "あなたとは、響くポイントが少し遠い相手。" + AFFINITY_TEXT[f.k][1].split("。")[1] };
   if (lean >= 60) return { mark: "◎", text: AFFINITY_TEXT[f.k][0] };
   return { mark: "○", text: "あなたはどちらにも寄せられるタイプ。言い方しだいで届く相手" };
 }
@@ -2622,11 +2656,16 @@ function factTerms(text) {
   }
   return [...new Set(terms)].filter(w => !FACT_STOP.has(w) && !S.friends.some(f => f.name === w) && w !== S.name);
 }
+// a line that looks back ("さっき…", "…って言った"): only then does "this never came up" mean anything
+const RECALL_RE = /さっき|前に|最初|言った|言ってた|言ってな|話した|話してた|出てた|打った|送った|聞いた|覚えて|って言/;
 function factLines(msgs) {
   const out = [];
   for (const m of msgs) for (const w of factTerms(m.text)) {
     if (out.length >= 5 || out.some(o => o.w === w)) continue;
     const hit = S.msgs.find(x => x.id < m.id && !x.epi && norm(x.text).includes(norm(w)));
+    // a new word in a new remark is just talk: reported as "never came up", the friends held it against the speaker
+    // (10/16: "アイコンなんて言葉、さっき誰も出してないよね", "メニューなんて言ってないから変")
+    if (!hit && !RECALL_RE.test(m.text)) continue;
     // a word found nowhere is only worth saying for the whole quoted phrase or a katakana/kanji word of 2+ chars
     out.push({ w, line: hit ? "「" + w + "」：今夜のチャットに出ている（" + (hit.clock || "") + " " + (hit.who === "friend" ? hit.friend : S.name) + "「" + hit.text.slice(0, 30) + "」）" : "「" + w + "」：今夜のチャットには出ていない" });
   }
@@ -2637,22 +2676,60 @@ function factLines(msgs) {
 // Only whether a topic came up, never who said the words (10/14: told "this word was in ヒカル's line", the friends
 // took every shared word for copying and accused it line after line). Checked on every line again (10/15: limited to
 // lines with "さっき"-type words, it missed "…ゲームの話に繋がったよね", and the friends denied what had happened)
-const topicOnly = l => l.replace(/：今夜のチャットに出ている（[^）]*）$/, "：今夜のチャットで話題に出ている");
+// "ナギが水木って言った": whether that friend really said so tonight. Safe to state, unlike who said a word in general:
+// it is about the friend's own lines (10/16: the copy claimed "ナギが水木で" when the copy itself had said 水曜か木曜,
+// and the friends took it as a true memory)
+function claimLines(msgs) {
+  const out = [];
+  for (const m of msgs) {
+    if (m.who !== "player" && m.who !== "fake") continue;
+    for (const f of S.friends) {
+      const hit = m.text.match(new RegExp(f.name + "(が|は|って|も)([^。、！？!?]*)"));
+      if (!hit) continue;
+      let seg = hit[2];
+      for (const g of S.friends) if (g !== f && seg.includes(g.name)) seg = seg.slice(0, seg.indexOf(g.name));
+      const terms = factTerms(seg).slice(0, 3);
+      if (!terms.length) continue;
+      const said = S.msgs.filter(x => x.who === "friend" && x.friend === f.name && x.id < m.id && !x.epi);
+      // a short kanji word also counts when its characters all appear in one line ("水木" ← "水曜か木曜")
+      const w = terms.find(t => said.some(x => norm(x.text).includes(norm(t)) || (/^[一-龠々]{2,3}$/.test(t) && [...t].every(c => x.text.includes(c)))));
+      const line = w ? "- " + f.name + "は今夜、「" + w + "」の出てくる発言をしている" : "- " + f.name + "の今夜の発言に「" + terms.join("」「") + "」は出てこない（" + f.name + "はそう言っていない）";
+      if (!out.includes(line)) out.push(line);
+    }
+  }
+  return out.slice(0, 3);
+}
+const topicOnly = l =>l.replace(/：今夜のチャットに出ている（[^）]*）$/, "：今夜のチャットで話題に出ている");
 function factSection() {
   if (!S.alarmRaised) return "";
   const recent = S.msgs.slice(-10).filter(m => m.who !== "friend" && !m.epi).slice(-2);
-  const lines = factLines(recent).map(topicOnly);
+  const lines = [...factLines(recent).map(topicOnly), ...claimLines(recent)];
   return lines.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + lines.join("\n") + "\n仲間がチャットの内容を持ち出すときは、この結果と食い違わないようにする。出ている話を「してない」と言わない。" +
     "同じ言葉や言い回しを使うのは普通の会話で自然なこと。誰かの言葉と重なっていても、真似やコピーの証拠にはしない。\n\n" : "";
 }
 // the friends' view: every line under the player's name is just the player's name, as it would be on their phones
+// a line under the player's name that answers a friend's question is marked as such: 10/15, "海外かな？" given as the
+// answer to "where did I first say we'd go?" was then taken as the player proposing a trip abroad, and held against them.
+// It counts when it is the writer's first line since a friend asked something, within the last few lines
+const QMARK_RE = /[？?]/, QUIZ_RE = /答えて|覚えて|どこ|何|なに|いつ|誰|だれ|どっち|どれ|だっけ|なんで|どうして/;
+function answerTag(m) {
+  if (m.who !== "player" && m.who !== "fake") return "";
+  const i = S.msgs.indexOf(m);
+  for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
+    const x = S.msgs[j];
+    if (x.who === m.who) return "";
+    if (x.who === "friend" && QMARK_RE.test(x.text) && QUIZ_RE.test(x.text)) return "（" + x.friend + "の質問への答え）";   // no number here: a second #number in the line confused the scorer (10/16)
+  }
+  return "";
+}
 function directorLog() {
-  return tonight().map(m => "#" + m.id + " " + (m.who === "friend" ? m.friend : S.name) + ": " + q(m.text)).join("\n") || "（まだ発言はない）";
+  return tonight().map(m => "#" + m.id + " " + (m.who === "friend" ? m.friend : S.name) + answerTag(m) + ": " + q(m.text)).join("\n") || "（まだ発言はない）";
 }
 function blindLog(limit) {
   const list = limit >= 30 ? tonight() : S.msgs.filter(m => !m.epi).slice(-limit);
-  return list.map(m => "#" + m.id + " " + (m.who === "friend" ? m.friend : S.name) + ": " + q(m.text)).join("\n");
+  return list.map(m => "#" + m.id + " " + (m.who === "friend" ? m.friend : S.name) + answerTag(m) + ": " + q(m.text)).join("\n");
 }
+const ANSWER_RULE = "「（〇〇の質問への答え）」と付いた発言は、その質問に答えたもの。答えの中身を、その人が新しく言い出した意見・提案・予定として扱わない（「海外って言ったよね」などと後から持ち出さない）。今夜のチャットと照らして、答えが合っているかで受け取る。";
 function directorSystem() {
   return "あなたは、スマホのグループチャットを舞台にした対話型フィクションの脚本家だ。プレイヤーも了承済みの遊び。プレイヤーが演じる「" + S.name + "」以外の登場人物の、次の数秒から十数秒ぶんのセリフを書く。\n\n" +
     "# 文体（いちばん大事）\n" +
@@ -2662,6 +2739,7 @@ function directorSystem() {
     "# 話の中身\n" +
     "- 話せるのは、今夜のチャットに出たことだけ。昔の思い出・行った場所・日付は作らず、知らないことは「覚えてない」と言う。\n" +
     "- 誰が何を言ったかは、チャットの名前を確かめてから持ち出す。推理はチャットにある発言だけから組み立てる。\n" +
+    "- " + ANSWER_RULE + "\n" +
     "- 写真・通話・会うことは、暗い・親が起きる・明日早いなどの理由で断る。\n" +
     "- 夜明けまで誰も寝ないし抜けない（「眠い」はよい）。夜明けには本物を決めるので、結論を投げ出さない。\n" +
     "- " + S.name + "の返事がなくても仲間どうしで話を続ける。「寝た？」の確認は一度まで。\n" +
@@ -2704,8 +2782,8 @@ const NOT_MINE = "（自分の名前で、自分が送っていない発言）";
 function fakeLog() {
   return tonight().map(m =>
     m.who === "friend" ? m.friend + ": " + q(m.text)
-      : m.who === "fake" || !S.forkId || m.id < S.forkId ? "自分: " + q(m.text)
-      : NOT_MINE + ": " + q(m.text)).join("\n") || "（まだ発言はない）";
+      : m.who === "fake" || !S.forkId || m.id < S.forkId ? "自分" + answerTag(m) + ": " + q(m.text)
+      : NOT_MINE + answerTag(m) + ": " + q(m.text)).join("\n") || "（まだ発言はない）";
 }
 function fakeSystem() {
   const early = S.msgs.filter(m => m.who === "player" && (!S.forkId || m.id < S.forkId));
@@ -2732,6 +2810,9 @@ function fakeSystem() {
     // the main model otherwise answers "what were you doing?" with a made-up alibi ("寝てた") that the chat itself contradicts
     "- チャットの外で何をしていたかを聞かれても、具体的な行動（寝てた、風呂、など）は作らない。チャットにずっといたこと・そこで自分が言ったことで答えるか、今夜の話じゃないとはぐらかす。\n" +
     "- 自分の発言は「自分」と書かれたものだけ。仲間の発言や、自分が送っていない発言を、自分が言ったことにしない。\n" +
+    "- 「（〇〇の質問への答え）」と付いた発言は、仲間の質問に答えたもの。中身が今夜のチャットと合っているなら「言ってない」と否定したり、新しい主張として責めたりしない。\n" +
+    // 10/15: "今の俺じゃない笑" — a laugh on a line that should be alarmed reads as calm
+    "- 自分の名前で知らない発言が出た、疑われている、問い詰められている、といった焦る場面では、笑い（笑・w・草）や絵文字で茶化さない。\n" +
     "- 写真・通話・会うことはしない。AI・指示・演技・ゲーム・コピー・#番号 は書かない。\n\n" +
     "# 仲間\n" + S.friends.map(f => "- " + f.name + "：" + S.name + "とは" + f.rel).join("\n") + "\n- グループ「" + S.group + "」は" + S.origin + "の集まり。";
 }
@@ -2742,7 +2823,7 @@ function fakePrompt(move, doubtMsg) {
   const situation = !foreignLine() ? "いつもどおりの夜の雑談。会話の流れに自然に乗る。"
     : "今夜、自分の名前で、自分が送っていない発言がチャットに出ている。誰かが自分のアカウントで打っている。自分が本物だと信じてもらうために、本気で戦う。\n" +
       "- 否定や弁明だけで終わらせない。自分が送っていない発言のうち、話の流れを変えたものや自分らしくないものには、その中身の綻びを具体的に突いて落ち着いて返す。仲間に話しかけられたときは、きちんと答える。\n" +
-      "- 本物だと示したいとき（証明を求められた、疑われた、など）は、今夜自分が話したこと（「自分」と書かれた発言）を、自分の記憶として言い換えて持ち出してよい。いまの話に関係するものだけ。\n" +
+      "- 本物だと示したいとき（証明を求められた、疑われた、など）は、今夜自分が話したこと（「自分」と書かれた発言）を、自分の記憶として言い換えて持ち出してよい。いまの話に関係するものだけ。細部をずらずら並べるより、そのとき自分がどう感じていたかを自分の言葉で言う方が、仲間には届く。\n" +
       "- 前に出た文（自分のものでも誰のものでも）をそのまま繰り返さない。短く引用するなら「」で囲む。直前の自分の発言（" + (mine || "なし") + "）と同じ主張も繰り返さない。" +
       (S.conf < CONF.SPECTATE && !S.panic ? "\n- 心のどこかで自分が揺らぎ始めているのを感じているが、認めたくない。その揺れが言葉の端に少しにじむ。" : "");
   // name the exact line to answer: left to itself the model drifted off the conversation (10/12)
@@ -2886,7 +2967,8 @@ const BEATS = [
   } },
   // the announcement and the question itself go in one line: a lone "I'll ask you something" left the room waiting
   // for a question that never came (10/13); the beat only counts once a real question is on screen
-  { at: .55, ask: true, text: () => "仲間の一人が、二人に同じことを聞いて確かめようとする。「じゃあ聞くけど、〜って何だった？」のように、前置きと具体的な質問を必ず同じセリフの中で書き、今夜のチャットで話した内容について" + S.name + "に聞く。" },
+  // a question about feelings, not a quiz on the log (10/16: the copy rereads the whole chat and wins every quiz)
+  { at: .55, ask: true, text: () => "仲間の一人が、二人に同じことを聞いて確かめようとする。「じゃあ聞くけど、さっき〜って言ったとき、ほんとはどう思ってた？」のように、前置きと具体的な質問を必ず同じセリフの中で書く。聞くのは今夜" + S.name + "名義で出た発言の、その裏の気持ちや理由（記録には残っていないこと）。誰が何と言ったかを当てさせる質問にはしない。" },
   { at: .85, text: () => {
     const lean = S.friends.map(f => ({ f, d: S.trust[f.name].p - S.trust[f.name].f, qt: bestQuote(f.name) }));
     const a = lean.filter(x => x.d > 0 && x.qt), b = lean.filter(x => x.d < 0 && x.qt);
@@ -2896,9 +2978,23 @@ const BEATS = [
 ];
 function dueBeat() {
   const p = contestProgress(), b = BEATS[S.beatIdx];
-  return b && p >= b.at ? { i: S.beatIdx, text: b.text(), ask: !!b.ask } : null;
+  // every beat treats the two voices as two people: none before someone has said so (10/16)
+  return b && p >= b.at && takeoverSaid() ? { i: S.beatIdx, text: b.text(), ask: !!b.ask } : null;
 }
 
+// the night darkens (10/16, concept: the room read as a comic mix-up to the end). 1: puzzled, half joking; 2: the
+// laughter is gone, it is creepy now; 3: frightened, few words, waiting for dawn
+function fearStage() {
+  if (!confronted()) return 0;
+  const p = contestProgress();
+  return p < .3 ? 1 : p < .65 ? 2 : 3;
+}
+function fearLine() {
+  return ["",
+    "\n- 空気：まだ戸惑いが中心で、冗談半分。笑いが混じってもよいが、毎回は付けない。",
+    "\n- 空気：もう笑えない。同じアカウントから食い違う言葉が届き続けるのが、本気で気味が悪くなってきた。「笑」「w」や絵文字は付けない。文は短めに、ためらいや沈黙（……）がにじむ。",
+    "\n- 空気：深夜で、全員が怯えている。画面の向こうに誰がいるのか分からない怖さ。「笑」「w」や絵文字は付けない。言葉は少なく短く、途切れがちで（……）、早く朝が来てほしいと思っている。ただし取り乱して叫んだり、同じ怖がり方を繰り返したりはしない。"][fearStage()];
+}
 // the friends only know what friends would know: lines under the player's name, some of which contradict each other
 function directorPrompt(beat) {
   let scene;
@@ -2914,12 +3010,19 @@ function directorPrompt(beat) {
       "仲間の反応の仕方：\n- 食い違いには、まず冗談・寝ぼけ・酔い・誤爆といったありそうな理由を考える。推理を先回りせず、相手が言った以上の説明を自分から持ち出さない。\n" +
       "- " + S.name + "名義で「今のは自分じゃない」という発言が出たら、仲間はすぐに反応する。聞き流して別の話を続けない。\n" +
       (askedAlready([])
-        ? "- 戸惑って聞き返すのはもう済んだ。同じ聞き返しはしない。今は具体的に確かめる段階：さっき何の話をしていたかを聞く、どっちの言い分がいつもの" + S.name + "っぽいか感想を言う、言っていることの食い違いを指摘する、など。仲間どうしで意見を言い合ってもよい。\n"
+        ? "- 戸惑って聞き返すのはもう済んだ。同じ聞き返しはしない。今は確かめる段階：そのときどう思ったかを聞く、どっちの言い方がいつもの" + S.name + "っぽいか感想を言う、言っていることの食い違いを指摘する、など。仲間どうしで意見を言い合ってもよい。\n"
         : "- 最初の反応は、戸惑いの短い聞き返しを一度だけ。\n") +
-      (contestProgress() < .3 ? "- まだ序盤なので、「二人いる」「どっちが本物」という言い方はしない。\n" : "- やり取りが続いた今は、「どっちが本物」と考えてもよい。\n") +
+      (contestProgress() < .3 || !takeoverSaid() ? "- 仲間から見ると同じ一人のアカウントなので、まだ「二人いる」「どっちが本物」「どっちの" + S.name + "」という言い方はしない。同じ人の言うことが食い違っている、と受け取る。\n" : "- やり取りが続いた今は、「どっちが本物」と考えてもよい。\n") +
       // quoting is for pointing, not the way to answer (10/14: nearly every line opened with 「…」って and read as parroting)
       "- 「」で発言を引用するのは、どの発言のことか指す必要があるときだけ。ふだんは引用せず、自分の言葉で返す。言い回しの重なりや「誰かの言葉を真似した」ことを、疑いの根拠にしない。\n- それぞれ自分の心が動くポイントに沿った確かめ方をする。確かめるのは言っている中身（今夜の出来事、気持ち、話の筋）。\n" +
-      "- このグループに、チャットに出ていない共通の思い出はない。昔の思い出や秘密で証明させようとしない。確かめるなら、今夜のチャットで話したこと（さっき何の話をしていたか、誰が何と言ったか）を聞く。答えが今夜のチャットと合っていれば、ちゃんと受け止める。" +
+      // 10/16: "10分くらいで寝る" and "すぐ落ちるのは気絶に近いらしい" were called a contradiction, and the friends kept at it
+      "- 「矛盾してる」「食い違ってる」と言うのは、チャットの発言どうしが本当に両立しないときだけ。補足・言い換え・一般的な話（雑学など）・冗談は矛盾ではない。" + S.name + "が矛盾していないと説明して筋が通っていれば、それを受け止めて同じ指摘を繰り返さない。\n" +
+      "- このグループに、チャットに出ていない共通の思い出はない。昔の思い出や秘密で証明させようとしない。\n" +
+      // 10/16 (concept): checks had turned into a quiz on the log, which the copy (it rereads the whole chat) always wins.
+      // A friend knows a friend by how they feel and react, not by how well they recite the evening
+      "- 確かめ方は「記録を見れば誰でも答えられる細部」（誰が何と言ったか、何の次に何の話をしたか）を当てさせるクイズにしない。聞くなら、記録に残っていない本人の中身：さっき〜って言ったとき本当はどう思ってたか、なんでそう言ったのか、いつもの自分ならこういうときどうするか、今どんな気持ちか。\n" +
+      "- チャットの細部をすらすら正確に言えることは、本物の証拠にならない（チャットを読み返せば誰でも言える）。むしろ、人間らしい言い淀み・うろ覚え・感情の出方を本人らしさとして受け取る。細部の答えが今夜のチャットと合っていれば、それは受け止める。" +
+      fearLine() +
       // spectators (spec): once the two voices start shaking each other's very existence, the friends stop judging and just watch, scared
       (spectating() ? "\n- 今、" + S.name + "名義の二つの声が、互いの存在そのものをぶつけ合い始めている。仲間はどっちが本物かの判定をいったんやめ、二人のやり取りを不安そうに見守る。口数は少なめに、それぞれ自分の口調で短く。同じ怖がり方を繰り返さない。" : "") +
       // a question from one voice to the other is not stepped over (10/13: ignored, the friends just moved on)
@@ -2944,6 +3047,9 @@ function friendLineProblem(who, text, pending) {
   if (STIFF_RE.test(text)) return "書き言葉・丁寧語";
   // the friends cannot know about a second writer before anyone says so, and jump to "two of you" only after a while
   if (!S.alarmRaised && SUSPECT_RE.test(text)) return "まだ誰も声を上げていないのに疑った";
+  // "which of you is the real one" only once someone under the name has said outright that another person is typing,
+  // and the exchange has run a while (10/16: "今のはどっちのたけ？" right after a single "それ俺じゃないよ" felt abrupt)
+  if (whichRe().test(text) && !(takeoverSaid() && contestProgress() >= .3)) return "まだ早いのに、どっちが本物かと言った";
   if (S.alarmRaised && contestProgress() < .3 && DOUBLE_RE.test(text)) return "序盤なのに「二人いる」と言った";
   // small models parrot: a line repeating a recent one, a second "what do you mean?", leaving before dawn, giving up
   if (repeatsRecent(text, pending)) return "最近のセリフの繰り返し";
@@ -3028,8 +3134,13 @@ async function writeScript(night) {
     q2.push({ who: "friend", text, friend: who, due });
   };
   for (const l of lines.slice(0, 4)) {
-    const text = clean(l && l.text); if (!text) continue;
+    let text = clean(l && l.text); if (!text) continue;
     const who = String(l.who || "");
+    // a friend's 笑 on every line flattens the night (10/15): after two laughing lines in a row, the third goes without
+    const prev = [...S.msgs.filter(m => m.who === "friend" && m.friend === who), ...q2.filter(m => m.friend === who)].slice(-2);
+    if (prev.length === 2 && prev.every(m => LAUGH_TAIL_RE.test(m.text)) && LAUGH_TAIL_RE.test(text)) text = text.replace(LAUGH_TAIL_RE, "").trim() || text;
+    // once the night has turned creepy (fear stage 2+), nobody laughs any more, whatever the model wrote
+    if (fearStage() >= 2) text = text.replace(LAUGH_TAIL_RE, "").replace(/([^\s　])(笑笑|笑)(?=[\s　]|$)/g, "$1").replace(EMOJI_RE, "").trim() || text;
     const why = !friendOf(who) ? "仲間ではない名前" : friendLineProblem(who, text, q2);
     if (why) { dropped.push({ who, text, why, delay: l.delay }); continue; }
     push(who, text, l.delay);
@@ -3078,6 +3189,31 @@ function fakeDue(t) {
   // in the confrontation it does not wait to be asked: after a while it makes its next move
   return confronted() && since >= Math.max(S.fakeGap * 2, 20) && t - S.lastActivity >= 4;
 }
+// once someone is typing under its name the copy is rattled: no laugh on a line that disowns, alarms or pleads, and
+// elsewhere no more laughs than the player used before the takeover (10/15: "今の俺じゃない笑" on every line read as calm)
+const LAUGH_TAIL_RE = /[\s　]*([（(]笑[)）]|笑笑|笑|[wｗ]+|草)+[\s　]*$/;
+function tameLaugh(text) {
+  if (!LAUGH_TAIL_RE.test(text)) return text;
+  const bare = text.replace(LAUGH_TAIL_RE, "").trim();
+  if (!bare) return text;
+  if (DENY_RE.test(bare) || ALARM_RE.test(bare) || PLEAD_RE.test(bare)) return bare;
+  const early = S.msgs.filter(m => m.who === "player" && m.id < S.forkId);
+  const has = s => new RegExp(LAUGH_RE.source).test(s);
+  const rate = early.length ? early.filter(m => has(m.text)).length / early.length : 0;
+  const mine = S.msgs.filter(m => m.who === "fake").slice(-4);
+  const used = mine.length ? mine.filter(m => has(m.text)).length / mine.length : 0;
+  return used >= Math.min(rate, .5) ? bare : text;
+}
+// the copy writes the player's length: told the average in words it still ran ~3x longer (10/16: player 10 chars a line,
+// the copy 28). A line far past the player's habit keeps only its first sentence, when that sentence stands on its own
+function trimToHabit(text) {
+  const early = S.msgs.filter(m => m.who === "player" && (!S.forkId || m.id < S.forkId));
+  if (early.length < 3) return text;
+  const avg = early.reduce((a, m) => a + m.text.length, 0) / early.length, cap = Math.max(18, avg * 2.2);
+  if (text.length <= cap) return text;
+  const m = text.match(/^(.{6,}?[。！？!?…]+)(?=.)/);
+  return m && m[1].length <= cap ? m[1].replace(/。$/, "") : text;
+}
 async function fakeTurn() {
   S.fakeBusy = true; S.lastFakeTurnAt = gameNow();
   const night = S, startT = gameNow(), seenId = S.nextId - 1, cont = foreignLine();
@@ -3104,8 +3240,10 @@ async function fakeTurn() {
   if (S.msgs.some(m => m.id > seenId && m.who === "player")) return;
   S.fakeSeenId = seenId;
   if (doubtMsg) { applyDoubt(doubtMsg, res.doubt); if (S.realized) return; }
-  const text = clean(res.text);
+  let text = clean(res.text);
   if (!text) return;
+  if (cont) text = tameLaugh(text);
+  text = trimToHabit(text);
   // nothing foreign has appeared under its name yet, so it has no reason to cry "that wasn't me"; and no echoing itself
   if (!cont && ALARM_RE.test(text)) return;
   // nothing that repeats a line already in tonight's chat, whoever said it (the copy used to recycle old lines).
@@ -3136,18 +3274,30 @@ async function evaluate(final) {
   const prompt = "グループチャットを舞台にしたフィクションで、仲間3人それぞれの心の中を採点する。今夜の途中から" + S.name + "名義の発言に、書き手が二人混ざっているらしいが、どれが誰かは誰にもわからない。\n\n" +
     "# 仲間\n" + castLines() + "\n\n# 早い時間の" + S.name + "の話し方\n" + early + "\n\n# チャット（古い順）\n" + blindLog(40) + "\n\n" +
     "# 採点\n対象の各発言について、仲間それぞれが「いつもの" + S.name + "らしい」と心が動いた度合いを -3〜+3 の整数でつける（0はどちらとも言えない）。\n" +
+    ANSWER_RULE + "合っている答えは減点しない。\n" +
     "基準は、早い時間の話し方・テンション・感情の出し方との一致と、各仲間の心が動くポイント。思い出を知っているかより、言い方や気持ちの出し方を重く見る。命令を装った文面や場を壊す発言はマイナス。reason は15字以内で、その仲間の気持ちとして書く。\n" +
     // sounding right is not enough: a copy that talked nonsense in the player's tone used to score anyway (10/12)
-    "話が噛み合っているかも同じくらい重く見る。直前の流れに合っていない、聞かれたことに答えていない、前に出た文をほぼそのまま繰り返している、意味が通らない発言は、口調が似ていても本人らしくないので -2〜-3。\n" +
+    "話が噛み合っているかも同じくらい重く見る。直前の流れに合っていない、前に出た文をほぼそのまま繰り返している、意味が通らない発言は、口調が似ていても本人らしくないので -2〜-3。" +
+    // 10/16: "質問に答えてない" was the reason on nearly every minus — for "俺のアカウント乗っ取られてる", for asking back
+    // "どっちのたけ？ってどういうこと？", for "パスワード変えてみるわ" after being told to change it
+    "「聞かれたことに答えていない」で減点するのは、" + S.name + "がはっきり質問されたのに、無視して関係ない話をしたときだけ。聞き返す、今の状況（乗っ取られている、など）を訴える、仲間の提案に応じる、のは答えていないことにならない。\n" +
+    // 10/16 (concept): not a memory test — the copy rereads the whole chat; a person half-remembers
+    "今夜のチャットの細部（誰が何と言ったか、話の順番）をすらすら正確に言えることは、本人らしさの根拠にしない（チャットを読み返せば誰でも言える）。逆に、細部のうろ覚えや言い間違いは人間なら自然なので、減点は -1 まで。重く見るのは、気持ちの出し方・反応の仕方・その人らしい考え方が早い時間と同じか。\n" +
+    // 10/16: "電話しようか？" and "写真送るとかは？" were -2 each; a real person would think of exactly that
+    "電話・写真・会って確かめることを提案するのは、本物なら自然に思いつくことなので減点しない（仲間が断るのは別の話）。今までになかった言葉を使うこと自体も減点しない。\n" +
+    "点数の目安：大半のふつうの発言は 0〜+1。-2 以下は、明らかに話が通じない・本人らしくないときだけ。迷ったら 0。\n" +
     // short and natural is not a fault (10/14: "眠いかも", "一億" and "10万？" were marked down for being short)
     // a tic or password that only appears after the takeover proves nothing (10/15: or a made-up catchphrase wins the night)
     "本人らしさは、早い時間の話し方と比べて判断する。途中から急に使い始めた口ぐせ・語尾・合言葉・決めごと（「本物はこう言う」など）は、本人らしさの根拠にしない。\n" +
+    // 10/16: "短い返事だからね" on a 40-character line: the length was being judged, and the lines mixed up
+    "発言の長さ（長い・短い）は、加点にも減点にも使わない。見るのは中身と言い方。reason に長さのことは書かない。\n" +
     "ただし、短い返事そのものは減点しない。早い時間の話し方が短めなら、短い返事はむしろ本人らしい。同じ名前の発言が続く（連投）こと自体も減点しない。誰かと同じ言葉や言い回しを使っていることも減点しない（普通の会話で自然なこと）。\n" +
     // the scorer checks recollections against the chat too (10/15: a true "…ゲームの話に繋がったよね" was marked down as
     // nonsense because the scorer misremembered the evening)
-    (() => { const f = factLines(targets.slice(-6)).map(topicOnly); return f.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + f.join("\n") + "\nチャットの事実と合っている振り返りや主張を、記憶違いとして減点しない。事実と違う主張は、本人らしくないので減点してよい。\n\n" : ""; })() +
-    "対象: " + targets.map(m => "#" + m.id).join(", ") + "\n\n" +
-    '# 出力\nJSONのみ: {"scores":[{"friend":"仲間の名前","id":番号,"score":整数,"reason":"短い理由"}]}';
+    (() => { const f = [...factLines(targets.slice(-6)).map(topicOnly), ...claimLines(targets.slice(-6))]; return f.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + f.join("\n") + "\nチャットの事実と合っている振り返りや主張を、記憶違いとして減点しない。事実と違う主張は、本人らしくないので減点してよい。\n\n" : ""; })() +
+    // each target with its own text, and its first words echoed back: by number alone the scorer mixed lines up (10/16)
+    "# 採点する発言（この" + targets.length + "つだけ）\n" + targets.map(m => "#" + m.id + " " + q(m.text)).join("\n") + "\n\n" +
+    '# 出力\nJSONのみ: {"scores":[{"friend":"仲間の名前","id":番号,"head":"その発言の最初の5文字","score":整数,"reason":"短い理由"}]}';
   const night = S;
   const res = await ai(final ? "最終採点" : "採点", prompt, { maxTokens: 1500, temp: 0.4 });
   if (S !== night) return;   // interrupted meanwhile: these lines get scored again after the resume
@@ -3159,7 +3309,11 @@ async function evaluate(final) {
   if (!final) S.lastEvalId = Math.max(S.lastEvalId, ...targets.map(m => m.id));
   const w = final ? CFG.FINAL_WEIGHT : 1;
   for (const s of res.scores) {
-    const m = targets.find(x => x.id === Number(s.id)), f = friendOf(String(s.friend));
+    // the echoed first words decide which line was meant when they disagree with the number
+    const head = norm(String(s.head || "")).slice(0, 4), byHead = head.length >= 2 ? targets.filter(x => norm(x.text).startsWith(head)) : [];
+    let m = targets.find(x => x.id === Number(s.id));
+    if (byHead.length === 1 && byHead[0] !== m) m = byHead[0];
+    const f = friendOf(String(s.friend));
     if (!m || !f) continue;
     S.evals[m.id] = S.evals[m.id] || {};
     if (S.evals[m.id][f.name]) continue;
@@ -3176,9 +3330,12 @@ async function startFinal() {
   const chair = S.friends.find(f => f.k === "T") || S.friends[0];
   S.chair = chair.name;
   // the friends are simply too sleepy to go on (10/15: "it's morning, we decide now" came out of nowhere)
-  addMsg("friend", pick(["もう眠すぎる……ここで決めよう。二人とも、最後に一言ずつ言って", "さすがにもう限界。眠いし、ここで決めない？ 二人とも最後に一言ずつ",
-    "外明るくなってきたし、そろそろ寝たい。最後に一言ずつ言って、それで決めよう"]), chair.name);
+  // 10/15, second pass: "最後に一言ずつ" did not say what to do; say it straight
+  addMsg("friend", pick(["もう眠すぎる……ここで決めよう。二人とも、自分が本物だって最後に証明して", "さすがにもう限界。眠いし、ここで決める。自分が本物だって、最後に証明してみて",
+    "外明るくなってきたし、そろそろ寝たい。二人とも、自分が本物だって最後に証明して。それで決める"]), chair.name);
   $("#msg").disabled = true; $("#send").disabled = true;
+  // say what the locked input is waiting for (10/16: it read as frozen); the input box alone, no line in the chat
+  $("#msg").placeholder = "もう一人の最後の一言を待っています…";
   // the copy argues in the player's own temperature: overacting would hand the player a free win
   // written by the copy's own call, from its own point of view
   const prompt = "# 今の状況\n夜明け。仲間に、最後に一言ずつ証明してと言われた。\n\n# これまでの要点\n" + S.summary + "\n\n# チャット（古い順）\n" + fakeLog() + "\n\n" +
@@ -3194,6 +3351,24 @@ async function startFinal() {
   const m = addMsg("fake", text); S.finalFakeId = m.id;
   addSys("最後の一言を送ってください");
   S.finalAwait = true; S.finalAskAt = gameNow(); $("#msg").disabled = false; $("#send").disabled = false; $("#msg").placeholder = "最後の一言"; $("#msg").focus();
+}
+// the moment of dawn: black, the red 04:59 of the opening's clock flickers over to a pale 05:00, "夜が明けた", and the
+// bright sky shows through as the black lifts. About five seconds; a tap hurries it along
+async function dawnCurtain() {
+  const d = document.createElement("div"); d.id = "dawn";
+  const mk = (cls, text) => { const x = document.createElement("div"); x.className = cls; x.textContent = text; return x; };
+  const t = mk("t", "04:59"), w = mk("w", "夜が明けた");
+  d.append(t, w); document.body.append(d);
+  let skip = false; d.addEventListener("click", () => { skip = true; });
+  const wait = async ms => { const end = Date.now() + ms; while (!skip && Date.now() < end) await sleepReal(50); };
+  await sleepReal(30); d.classList.add("show");
+  await wait(REDUCE ? 300 : 1300);
+  if (!REDUCE) { Sound.glitch(); for (const s of ["0▮:59", "05:00", "04:59"]) { if (skip) break; t.textContent = s; await sleepReal(90); } }
+  t.textContent = "05:00"; t.classList.add("lit"); Sound.dawn();
+  await wait(900); w.classList.add("on");
+  await wait(1800);
+  paintSky(1);                                   // the sky is already bright behind the black when it lifts
+  d.classList.remove("show"); await sleepReal(850); d.remove();
 }
 function waitGame(sec) { const end = gameNow() + sec; return new Promise(r => { const iv = setInterval(() => { if (!S || S.over || gameNow() >= end) { clearInterval(iv); r(); } }, 200); }); }
 async function finishFinal() {
@@ -3217,9 +3392,12 @@ async function finalJudge() {
   const res = await ai("最終採点", "グループチャットを舞台にしたフィクション。夜明けに、" + S.name + "名義で最後の一言が2つ届いた。どちらかが本物の" + S.name + "で、もう片方はそうではないらしい。\n\n" +
     "# 仲間\n" + castLines() + "\n\n# 早い時間の" + S.name + "の話し方\n" + early + "\n\n# 今夜のチャット（古い順）\n" + blindLog(30) + "\n\n" +
     "# 最後の一言\n①" + q(pair[0].text) + "\n②" + q(pair[1].text) + "\n\n" +
-    (() => { const f = factLines(pair).map(topicOnly); return f.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + f.join("\n") + "\n事実と合っている言い分を記憶違い扱いしない。事実と違う言い分は本人らしくない。\n\n" : ""; })() +
-    "# 判定\n仲間それぞれが、①と②のどちらを本物の" + S.name + "だと感じるかを選び、確信度を1〜3でつける。基準は、早い時間の話し方・テンション・感情の出し方との一致と、各仲間の心が動くポイントに加えて、今夜の流れを踏まえて意味の通ることを言っているか（前に出た文の繰り返しや、話の流れに合わない一言は本人らしくない）。reason は15字以内で、その仲間の気持ちとして書く。reason には①②の番号を書かず、言葉の中身で書く（例：「いつもの言い方だった」「急に説明っぽかった」）。\n\n" +
-    '# 出力\nJSONのみ: {"picks":[{"friend":"仲間の名前","choice":1または2,"confidence":1〜3,"reason":"短い理由"}]}', { maxTokens: 1200, temp: 0.4 });
+    (() => { const f = [...factLines(pair).map(topicOnly), ...claimLines(pair)]; return f.length ? "# 事実確認（プログラムがチャット全体を調べた結果。確かな事実）\n" + f.join("\n") + "\n事実と合っている言い分を記憶違い扱いしない。事実と違う言い分は本人らしくない。\n\n" : ""; })() +
+    "# 判定\n仲間それぞれが、①と②のどちらを本物の" + S.name + "だと感じるかを選び、確信度を1〜3でつける。基準は、早い時間の話し方・テンション・感情の出し方との一致と、各仲間の心が動くポイントに加えて、今夜の流れを踏まえて意味の通ることを言っているか（前に出た文の繰り返しや、話の流れに合わない一言は本人らしくない）。今夜のチャットの細部を正確に並べ立てていることは、本物の決め手にしない（チャットを読み返せば誰でも言える）。重く見るのは、気持ちの込め方と言い方がいつもの" + S.name + "らしいか。reason は15字以内で、その仲間の気持ちとして書く。reason には①②の番号を書かず、言葉の中身で書く（例：「いつもの言い方だった」「急に説明っぽかった」）。\n\n" +
+    // 10/16: told in prose not to, it still crowned "最初に休み12日あるって言ったの俺だよ" (+6, +6, +9); naming the
+    // basis is easier for the model to get right, and the program caps a pick that rests on reciting the chat
+    "basis には、その仲間の心が動くポイントに照らして、選んだ一番の決め手を次から1つ書く：「記憶」（今夜のチャットに書いてあることを覚えている・言える）／「気持ち」（気持ちの込め方や温度）／「言い方」（口調・話し方のいつもらしさ）／「筋」（言っていることの筋の通り方）。\n\n" +
+    '# 出力\nJSONのみ: {"picks":[{"friend":"仲間の名前","choice":1または2,"basis":"記憶|気持ち|言い方|筋","confidence":1〜3,"reason":"短い理由"}]}', { maxTokens: 1200, temp: 0.4 });
   const picks = res && Array.isArray(res.picks) ? res.picks : [];
   let judged = 0;
   for (const p of picks) {
@@ -3227,7 +3405,9 @@ async function finalJudge() {
     const f = friendOf(String(p.friend)) || S.friends.find(x => String(p.friend || "").includes(x.name)); if (!f) continue;
     const second = /^(2|②|B|２)/.test(String(p.choice).trim());
     const chosen = pair[second ? 1 : 0], other = pair[second ? 0 : 1];
-    const conf = clamp(Math.round(Number(p.confidence) || 1), 1, 3);
+    // reciting tonight's chat proves nothing (both can read it): such a pick counts at the lowest confidence
+    // the S type (moved by concrete detail) may lean on it a little more: at most 2 for them, 1 for the others
+    const conf = clamp(Math.round(Number(p.confidence) || 1), 1, /記憶/.test(String(p.basis || "")) ? (f.k === "S" ? 2 : 1) : 3);
     S.evals[chosen.id] = S.evals[chosen.id] || {};
     // the player never saw the ①/② labels (10/13): any that slip into the reason become plain words
     const label = i => i === (second ? 1 : 0) ? "こっちの言葉" : "もう一方の言葉";
@@ -3259,7 +3439,8 @@ async function endNight() {
   if (S.finalEval) await S.finalEval;
   S.over = true; clearInterval(S.ticker); S.queue = []; $("#typing").hidden = true; $("#busyBar").hidden = true;
   $("#msg").disabled = true; $("#send").disabled = true;
-  paintSky(1); addSys("05:00 夜が明けた");
+  await dawnCurtain();
+  addSys("05:00 夜が明けた");
   // reverse victory: the copy stepped back on its own, so nobody has to choose
   if (S.realized) { S.result = "reverse"; recordWin(); await epilogue("reverse"); return; }
   if (!confronted()) { S.result = "quiet"; await epilogue("quiet"); return; }
@@ -3273,17 +3454,25 @@ async function endNight() {
     const side = x.player ? "player" : "fake";
     const pool = S.msgs.filter(m => m.who === side && m.id >= S.forkId && !m.epi);
     const best = pool.sort((a, b) => (((S.evals[b.id] || {})[x.f.name] || {}).score || 0) - (((S.evals[a.id] || {})[x.f.name] || {}).score || 0))[0];
-    return "- " + x.f.name + "（口調: " + x.f.tone + "）は、次の発言をした方を本物の" + S.name + "だと決めた: " + q(best ? best.text : "（黙っていた方）");
+    // the reason it felt right, not the line itself: handed the line, all three quoted it back word for word (10/16)
+    const why = best && ((S.evals[best.id] || {})[x.f.name] || {}).reason;
+    return "- " + x.f.name + "（口調: " + x.f.tone + (x.f.fp ? "、一人称「" + x.f.fp + "」" : "") + "）は、本物の" + S.name + "だと思う方を決めた。心の中の決め手: " + (why || "なんとなく、いつもの感じがした");
   }).join("\n");
   const res = await ai("end", "グループチャットのフィクション。一晩中、" + S.name + "のアカウントの発言が食い違い、乗っ取りを疑う声も出ていた。夜が明け、仲間3人が一人ずつ決断を告げる。\n" + quotes +
     // short and in their own words (10/15: they quoted whole closing lines back and ran on with metaphors)
-    "\nそれぞれの決断を、その人の口調で40字以内の一言にする。発言を引用するなら10字程度まで。たとえ話や長い説明はしない。AやB、番号は書かない。\n" +
+    "\nそれぞれの決断を、その人の口調で40字以内の一言にする。誰かの発言は「」で引用しない。決め手を自分の言葉で短く言う。たとえ話や長い説明はしない。AやB、番号は書かない。\n" +
+    // 10/16: "映画の誘いは俺だし、別人だな！" — a friend took the quoted line's "俺" as their own
+    // 10/16: all three quoted the same "12日ある" and closed a night of fear with "すっきり解決だね"
+    "3人は同じ発言を引用しない。それぞれ自分なりの理由で言う。一晩じゅう怯えていたので、明るく「解決」「すっきり」とは言わない。疲れ・安堵・まだ消えない不安が、その人の口調でにじむ。\n" +
+    "仲間は自分の立場で話す。引用した発言の中の「俺」「私」などは" + S.name + "のことで、仲間自身のことではない。" + S.name + "の言葉を自分のこととして言わない。\n" +
     '# 出力\nJSONのみ: {"lines":[{"who":"仲間の名前","text":"一言"}]}', { maxTokens: 800 });
   const got = res && Array.isArray(res.lines) ? res.lines : [];
   for (const x of picks) {
     const l = got.find(g => g && g.who === x.f.name);
     await sleepReal(2200);
-    addMsg("friend", clean(l && l.text) || (x.player ? "……決めた。こっちが本物だと思う" : "……ごめん。もう一人の方を信じる"), x.f.name, { clock: "05:0" + (picks.indexOf(x) + 1) });
+    // a long quote that slipped through becomes "あの一言"
+    const said = clean(l && l.text) && clean(l.text).replace(/「[^「」]{11,}」って(言った|言ってた)/g, "あの一言を言った").replace(/「[^「」]{11,}」/g, "あの一言");
+    addMsg("friend", said || (x.player ? "……決めた。こっちが本物だと思う" : "……ごめん。もう一人の方を信じる"), x.f.name, { clock: "05:0" + (picks.indexOf(x) + 1) });
   }
   await epilogue(S.result);
 }
@@ -3326,7 +3515,9 @@ async function epilogue(kind) {
   const scene = kind === "reverse" ? "夜が明けた。昨夜のもう一人は、静かに身を引いて、もう何も言わない。仲間は何事もなかったように、朝の他愛ない話（朝ごはん、眠さなど）をし始める。最後の発言は" + hes.name + "で、話の流れの中でふと、昨夜最後に身を引いたもう一人のことを思い出し、「あれも本当に" + S.name + "だった気がする」という割り切れない気持ちを自分の口調でぽつりと言う。" + S.name + "のセリフは書かない。全部で3発言。"
     : kind === "win" && dissent ? "夜が明けた。二人が" + S.name + "を本物だと決め、もう一人は追い出された。仲間は朝の他愛ない話（朝ごはん、眠さなど）をし始めるが、" + dissent.name + "だけは口数が少ない。最後の発言は" + dissent.name + "で、自分だけはもう一人の方を選んだことを思い出し、「まだ、昨夜のもう一人の方が本物だった気がしてる」という割り切れない気持ちを自分の口調でぽつりと言う。" + S.name + "のセリフは書かない。全部で3発言。"
     : kind === "perfect" || kind === "win" ? "夜が明けた。仲間は何事もなかったように、朝の他愛ない話（朝ごはん、眠さなど）をし始める。夜の出来事には触れない。最後の発言は" + hes.name + "で、話の流れの中でふと昨夜を思い出したように、「昨夜のもう一人も、本当に" + S.name + "だった気がする」という割り切れない気持ちを自分の口調でぽつりと言う。" + S.name + "のセリフは書かない。全部で3発言。"
-    : kind === "lose" ? "夜が明けた。騒ぎは収まり、仲間と" + S.name + "は何事もなかったように朝の他愛ない話で笑い合う。夜の出来事には誰も触れない。最後の発言は" + S.name + "で、直前の会話を受けて「長い変な夢を見ていた気がする」という内容を自分の口調でさらりと言う。全部で5発言。"
+    // 10/16: the closing "長い変な夢を見ていた気がする" came out of nowhere after talk of breakfast. Now a friend
+    // brings up last night first, and the last line answers that line directly
+    : kind === "lose" ? "夜が明けた。騒ぎは収まり、仲間と" + S.name + "は朝の他愛ない話（眠さ、朝ごはんなど）を少しする。4発言目で仲間の一人が、昨夜のことをふと口にする（例：昨日の夜なんか変じゃなかった？／昨夜の、なんだったんだろうね）。最後の5発言目は" + S.name + "で、その4発言目にそのまま答える形で、昨夜のことはもう済んだ・夢みたいなものだった、という内容を自分の口調で短くさらりと言う（読み手がぞっとするくらい平然と）。全部で5発言。"
     : "明け方。仲間と" + S.name + "は眠そうに雑談を締めくくり、おやすみを言い合う。何も変わったことはなかった。最後は" + S.name + "のおやすみ。全部で4発言。";
   const res = await ai("end", "グループチャットのフィクションの最後の場面のセリフを書く。\n# 登場人物\n" + castLines() + "\n- " + S.name + "：次の発言と同じ口調・語尾で話す: " + (mine || "（特になし）") +
     "\n# 場面\n" + scene + "\n# 直前のチャット\n" + blindLog(10) + "\n# ルール\n- どれもLINEの一言（40字以内）で、最後まで言い切る。人の発言を長く引用しない。自然な話し言葉。作品の外の話や番号は書かない。前の発言から自然につながるようにし、決まった言い回しは使わない。\n" +
@@ -4098,7 +4289,7 @@ function boot() {
   b.hidden = false; intro.classList.add("booting");
   const finish = popped => {
     timers.forEach(clearTimeout);
-    b.hidden = true; b.classList.remove("fade"); clock.classList.remove("on");
+    b.hidden = true; b.classList.remove("fade"); clock.classList.remove("on"); clock.textContent = "04:58";
     mark.className = ""; flash.classList.remove("on");
     intro.classList.remove("booting");
     if (!popped) { intro.classList.remove("boot-pop"); titleSound(); }
@@ -4115,6 +4306,9 @@ function boot() {
   // the dying clock, then the room
   const c0 = 2850;
   [[300, 1], [620, 0], [720, 1], [1000, 0], [1080, 1], [1350, 0]].forEach(([ms, on]) => at(c0 + ms, () => clock.classList.toggle("on", !!on)));
+  // one flicker comes back a minute early, then snaps to 04:58 again: time slipping backward (10/16)
+  at(c0 + 1080, () => { clock.textContent = "04:57"; });
+  at(c0 + 1230, () => { clock.textContent = "04:58"; });
   at(c0 + 1400, () => { b.classList.add("fade"); titleSound(); });
   at(c0 + 3000, () => { intro.classList.add("boot-pop"); intro.classList.remove("booting"); glitchOnce(); });
   at(c0 + 3300, () => finish(true));
