@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>プライバシーポリシー｜夜明けの残響</title>
+<meta name="description" content="スマートフォン向けゲーム『夜明けの残響』のプライバシーポリシー">
+<style>
+  :root { --bg: #070a18; --ink: #ece8f4; --muted: #9a96b6; --line: rgba(236,232,244,.12); --accent: #f2c48d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif; line-height: 1.85; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+  header { margin-bottom: 28px; }
+  header a { display: inline-block; }
+  header img { display: block; width: min(260px, 70vw); height: auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: .04em; }
+  h2 { font-size: 17px; margin: 36px 0 8px; color: var(--accent); }
+  p, li { font-size: 15px; }
+  ul { padding-left: 1.3em; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .table { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  a { color: var(--accent); }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header><a href="./"><img src="logo.png" alt="夜明けの残響 LIMINAL CHAT"></a></header>
+  <h1>プライバシーポリシー</h1>
+  <p class="meta">制定日：2026年10月18日</p>
+
+  <p>Dawn Games（以下「私たち」）は、スマートフォン向けゲーム『夜明けの残響』（以下「本アプリ」）における利用者の情報の取り扱いについて、以下のとおり定めます。</p>
+
+  <h2>1. 私たちのサーバーには、何も送られません</h2>
+  <p>本アプリは、私たちが運営するサーバーを使いません。利用者がゲーム内で入力した言葉や設定が、私たちに送られたり、私たちのもとに保存されたりすることはありません。ただし、下の「発言の報告」を利用者が自分で送った場合に限り、その報告の内容が私たちに届きます。</p>
+
+  <h2>発言の報告</h2>
+  <p>チャットの友人の吹き出しを長押しすると、AIが作った不適切な発言を私たちに報告できます。報告を送ったときに限り、次の内容が Google フォーム（Google LLC のサービス）を通じて私たちに届きます。</p>
+  <ul>
+    <li>報告した発言の文章</li>
+    <li>誰の発言か（友人の名前）、使っていたAIのモデル名、アプリのバージョン</li>
+    <li>選んだ理由</li>
+  </ul>
+  <p>利用者の名前や、そのほかの会話の内容は送られません。報告は、AIへの指示を改善し、不適切な発言を減らすためだけに使います。</p>
+
+  <h2>2. 入力した言葉の送り先（Google の Gemini API）</h2>
+  <p>本アプリでは、友人たちの返事をAIが作ります。そのため、利用者がゲーム中に入力した言葉と、その夜のチャットの内容は、<strong>利用者自身が登録したAPIキー（合鍵）を使って、Google LLC の Gemini API に直接送信されます</strong>。</p>
+  <ul>
+    <li>送信された内容の取り扱いは、Google の利用規約とプライバシーポリシーに従います。</li>
+    <li>Gemini API の無料枠では、送信された内容が Google のサービスの改善に使われることがあります。<strong>本名、住所、電話番号などの個人情報は入力しないでください。</strong></li>
+  </ul>
+  <p>参考：<a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Gemini API 追加利用規約</a>／<a href="https://policies.google.com/privacy" rel="noopener">Google プライバシーポリシー</a></p>
+
+  <h2>3. 端末の中だけに保存する情報</h2>
+  <p>次の情報は、利用者の端末の中だけに保存されます。私たちを含め、外部に送信されることはありません（APIキーは、上記2の送信のときだけ Google に渡されます）。</p>
+  <div class="table">
+  <table>
+    <tr><th>情報</th><th>用途</th></tr>
+    <tr><td>名前</td><td>友人たちからの呼びかけ</td></tr>
+    <tr><td>APIキー（合鍵）と、有料のAPIを使っているかどうかの設定</td><td>Gemini API の利用</td></tr>
+    <tr><td>クリア回数と戦績、音・文字の設定</td><td>記録と表示</td></tr>
+    <tr><td>その日に使ったAIの回数</td><td>1日に遊べる回数の表示</td></tr>
+    <tr><td>中断中の夜の内容</td><td>「つづきから」での再開。夜が終わると消えます</td></tr>
+  </table>
+  </div>
+  <p>夜が終わると、その夜のチャットの内容は残りません。アプリを削除すると、端末に保存された情報もすべて消えます。</p>
+
+  <h2>4. 広告</h2>
+  <p>本アプリは、現在、広告を表示していません。今後広告を導入する場合は、このポリシーを改め、このページでお知らせします。</p>
+
+  <h2>5. 対象年齢</h2>
+  <p>本アプリは事故や死を扱う物語を含むゲームで、13歳未満の方を対象としていません。13歳未満の方の情報を意図的に収集することはありません。</p>
+
+  <h2>6. このポリシーの変更</h2>
+  <p>本アプリの機能の変更などにあわせて、このポリシーを改めることがあります。大きな変更がある場合は、このページでお知らせします。</p>
+
+  <h2>7. お問い合わせ</h2>
+  <p>本ポリシーに関するお問い合わせは、次の連絡先までお願いします。<br><a href="mailto:support.dawn12@gmail.com">support.dawn12@gmail.com</a></p>
+
+  <footer>© 2026 Dawn Games</footer>
+</main>
+</body>
+</html>
