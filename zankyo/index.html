@@ -4,14 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>夜明けの残響｜LIMINAL CHAT</title>
-<meta name="description" content="死んだのは、あなただと言われた。夜が明けるまでに、3人の言葉を確かめられるか。">
+<meta name="description" content="その死を、あなたは受け入れられるか。夜が明けるまでに、3人の言葉を確かめて。">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { --bg: #070a18; --ink: #ece8f4; --muted: #9a96b6; --accent: #f2c48d; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif; line-height: 1.9; }
   main { max-width: 640px; margin: 0 auto; padding: 56px 16px 64px; text-align: center; }
+  .app-icon { display: block; width: 104px; height: 104px; margin: 0 auto 28px; border-radius: 24px; box-shadow: 0 6px 28px rgba(0,0,0,.45); }
   .logo { display: block; width: min(420px, 90vw); height: auto; margin: 0 auto; filter: drop-shadow(0 0 18px rgba(242,196,141,.18)); }
   .lead { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 17px; margin-top: 32px; }
+  /* a narrow screen wraps only between phrases, never inside a word */
+  main p span { display: inline-block; }
   nav { margin-top: 40px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
   a { color: var(--accent); }
   footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
@@ -19,9 +24,10 @@
 </head>
 <body>
 <main>
+  <img class="app-icon" src="icon.png" alt="" width="104" height="104">
   <img class="logo" src="logo.png" alt="夜明けの残響 LIMINAL CHAT">
-  <p class="lead">朝日を見に行く約束をしていた、4人のグループチャット。<br>そこで告げられたのは、<br>「お前は昨日、事故で死んだ」という言葉だった。<br>夜が明けるまでに、3人の言葉を確かめられるか。</p>
-  <p>深夜のグループチャットを舞台にした、AIとの会話で遊ぶ物語のゲームです。</p>
+  <p class="lead"><span>朝日を見に行く約束をしていた、</span><span>4人のグループチャット。</span><br><span>そこで告げられたのは、</span><br><span>「お前は昨日、事故で死んだ」</span><span>という言葉だった。</span><br><span>夜が明けるまでに、</span><span>3人の言葉を確かめられるか。</span></p>
+  <p><span>深夜のグループチャットを舞台にした、</span><span>AIとの会話で遊ぶ</span><span>物語のゲームです。</span></p>
   <nav>
     <a href="privacy.html">プライバシーポリシー</a>
     <a href="mailto:support.dawn12@gmail.com">お問い合わせ（support.dawn12@gmail.com）</a>
